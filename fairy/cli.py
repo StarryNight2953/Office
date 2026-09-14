@@ -281,6 +281,7 @@ def main() -> None:
         else output_dir / f"{args.scenario}.oracle.json"
     )
 
+    # 这是构建oracle、回放和评估的主要逻辑分支。它们不需要构建一个真实的代理，而是使用场景类来生成工作流并进行评估。
     if args.build_oracle or args.replay or args.evaluate:
         run_wall_start = time.perf_counter()
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -357,6 +358,7 @@ def main() -> None:
         print(f"run_report={report_path}")
         return
 
+    # 这是构建和运行一个真实的代理的主要逻辑分支。它使用场景类来设置环境，并使用指定的控制器和LLM来运行代理。
     scenario = scenario_class(**scenario_kwargs)
     if args.agent:
         run_wall_start = time.perf_counter()
