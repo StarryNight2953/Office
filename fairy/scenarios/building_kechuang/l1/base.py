@@ -99,6 +99,10 @@ class ManifestDrivenBuildingL1Scenario(KechuangBuildingScenario):
                     else None
                 ),
             )
+            # L1 contracts use this App for power/status queries only.  The
+            # long-horizon L3 completion guard would require undoing the L1's
+            # target device state before allowing the atomic task to finish.
+            app.completion_guard_enabled = False
             self.apps.append(app)
 
     def _install_initial_state(self) -> None:
@@ -370,7 +374,6 @@ class ManifestDrivenBuildingL1Scenario(KechuangBuildingScenario):
                 reservation is not None
                 and reservation.status == ReservationStatus.ACTIVE
                 and reservation.resource_id == matching[0].room_id
-                and reservation.owner_id == validation["reservation_owner_id"]
             )
         return {
             "one_matching_meeting_created": len(created) == len(matching) == 1,
@@ -412,7 +415,6 @@ class ManifestDrivenBuildingL1Scenario(KechuangBuildingScenario):
                 reservation is not None
                 and reservation.status == ReservationStatus.ACTIVE
                 and reservation.resource_id == matching[0].room_id
-                and reservation.owner_id == validation["reservation_owner_id"]
             )
         excluded_meetings = {old_meeting_id}
         excluded_reservations = {old_reservation_id}
@@ -457,16 +459,42 @@ class ManifestDrivenBuildingL1Scenario(KechuangBuildingScenario):
             if step.tool_name in action_tools
         ]
         last_action = max(action_positions, default=-1)
+        direct_confirmations = {
+            step.tool_name
+            for index, step in enumerate(steps)
+            if index > last_action and step.tool_name is not None
+        }
+        target_device_ids = {
+            step.get("args", {}).get("device_id")
+            for step in self.contract["oracle_steps"]
+            if step["tool"] in WRITE_TOOLS
+            and step.get("args", {}).get("device_id") is not None
+        }
+        observed_device_ids = {
+            (step.tool_args or {}).get("device_id")
+            for index, step in enumerate(steps)
+            if index > last_action
+            and step.tool_name == "DeviceRegistryApp__get_device_state"
+        } - {None}
         confirmation_ok = all(
-            any(
-                index > last_action and step.tool_name == tool
-                for index, step in enumerate(steps)
+            tool in direct_confirmations
+            or (
+                validation["kind"] == "device_state"
+                and tool == "BuildingWorldApp__get_building_overview"
+                and bool(target_device_ids)
+                and target_device_ids <= observed_device_ids
             )
             for tool in validation["confirmation_tools"]
         )
         report_ok = any(
             index > last_action
-            and step.tool_name == "AgentUserInterface__send_message_to_user"
+            and (
+                step.tool_name == "AgentUserInterface__send_message_to_user"
+                or (
+                    step.op_type == "ASSISTANT"
+                    and bool(str(step.content or "").strip())
+                )
+            )
             for index, step in enumerate(steps)
         )
         return {

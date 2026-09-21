@@ -747,12 +747,15 @@ def build_supplemental_contracts(
             ],
             "meaningful_source_action_ids": ["supplemental_create_meeting"],
             "expected_meeting": expected_booking,
-            "reservation_owner_id": "request-001",
         },
         {
             "goal": CAPABILITY_DEFINITIONS["meeting_room_booking"]["goal"],
-            "prompt": ScenarioBuildingKechuangRoomBooking.scenario_input
-            + "\n房间、时间、人数、设备需求和冲突状态是同一预约能力的输入变体。",
+            "prompt": (
+                ScenarioBuildingKechuangRoomBooking.scenario_input
+                + "\n创建会议后，必须重新查询教授日程、最终房间日程和该房间的有效预约，"
+                "确认会议与预约一致后再报告结果。"
+                "\n房间、时间、人数、设备需求和冲突状态是同一预约能力的输入变体。"
+            ),
             "completion_report": "会议室预约已创建，并已查询会议与有效资源预约确认。",
         },
         obligation_refs_by_capability["meeting_room_booking"],
@@ -808,14 +811,17 @@ def build_supplemental_contracts(
             "old_meeting_id": "existing-001",
             "old_reservation_id": "reservation-0001",
             "expected_meeting": expected_change,
-            "reservation_owner_id": "change-request-001",
         },
         {
             "goal": CAPABILITY_DEFINITIONS["meeting_requirement_change"]["goal"],
             "prompt": (
-                "现有会议因人数减少需迁移到更合适的房间。请先查询旧会议和冲突，确认权限，"
-                "取消旧承诺并释放旧预约，再按新人数、时间和设备需求选择房间、创建替代会议，"
-                "最后查询会议与预约确认一致性。变更类型、时刻、人员和目标房间均为输入变体。"
+                "staff-01 需要变更现有会议 existing-001：人数由 10 人减少为 6 人，"
+                "新时间为 2026-09-10 14:00 至 15:00，参与者包括 professor-01，"
+                "且仍需要投影设备。请先查询旧会议和冲突并确认 staff-01 的权限，"
+                "再取消旧会议、释放旧预约，并选择容量和设备均合适的较小可预约房间，"
+                "创建替代会议。创建后必须重新查询 professor-01 的日程、最终房间日程"
+                "和该房间的有效预约，确认替代会议与预约一致后再报告结果。"
+                "变更类型、时刻、人员和目标房间均为输入变体。"
             ),
             "completion_report": "会议需求变更已处理，旧承诺已释放，替代会议和预约已确认。",
         },

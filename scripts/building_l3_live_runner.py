@@ -12,8 +12,6 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from openai import OpenAI
-
 from fairy.scenarios.building_kechuang.l3.catalog import L3_SPECS
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -63,6 +61,8 @@ def scenario_ids_for_stage(stage: str) -> tuple[str, ...]:
 
 def preflight(endpoint: str, model: str, timeout_seconds: float) -> dict[str, Any]:
     """Verify model discovery and one required function call."""
+
+    from openai import OpenAI
 
     client = OpenAI(api_key="EMPTY", base_url=endpoint, timeout=timeout_seconds)
     available_models = sorted(item.id for item in client.models.list().data)
@@ -159,7 +159,21 @@ def build_cli_command(
 def run_stage(args: argparse.Namespace) -> Path:
     """Run a stage sequentially and refresh its aggregate report per cell."""
 
-    scenario_ids = scenario_ids_for_stage(args.stage)
+    return run_scenarios(
+        args,
+        scenario_ids_for_stage(args.stage),
+        experiment_title="Building L3 live-model experiment",
+    )
+
+
+def run_scenarios(
+    args: argparse.Namespace,
+    scenario_ids: tuple[str, ...],
+    *,
+    experiment_title: str,
+) -> Path:
+    """Run an explicit Building scenario batch with the shared live protocol."""
+
     output_root = args.output_root
     output_root.mkdir(parents=True, exist_ok=True)
     rows: list[dict[str, Any]] = []
@@ -237,7 +251,7 @@ def run_stage(args: argparse.Namespace) -> Path:
                     return_code=completed.returncode,
                 )
         rows.append(row)
-        _write_summary(output_root, rows)
+        _write_summary(output_root, rows, experiment_title=experiment_title)
         print(
             f"[{index}/{len(scenario_ids)}] done {scenario_id}: "
             f"status={row.get('status')} validation={row.get('validation_success')}",
@@ -245,7 +259,7 @@ def run_stage(args: argparse.Namespace) -> Path:
         )
 
     if not args.dry_run:
-        _write_summary(output_root, rows)
+        _write_summary(output_root, rows, experiment_title=experiment_title)
     return output_root / "summary.md"
 
 
@@ -303,13 +317,18 @@ def _failure_row(
     }
 
 
-def _write_summary(output_root: Path, rows: list[dict[str, Any]]) -> None:
+def _write_summary(
+    output_root: Path,
+    rows: list[dict[str, Any]],
+    *,
+    experiment_title: str = "Building L3 live-model experiment",
+) -> None:
     (output_root / "summary.json").write_text(
         json.dumps(rows, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
     lines = [
-        "# Building L3 live-model experiment",
+        f"# {experiment_title}",
         "",
         "| Scenario | Status | Stop | Validation | Tools | LLM | Tokens | Wall s | Report |",
         "|---|---|---|---:|---:|---:|---:|---:|---|",

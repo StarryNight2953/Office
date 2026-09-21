@@ -26,6 +26,10 @@ class ResourceAllocationApp(App):
     def reserve_room(self, room_id, owner_id, start_at, end_at):
         """Atomically reserve a room after rechecking current conflicts."""
 
+        canonical_room_id = self.world.resolve_room_id(room_id)
+        if canonical_room_id is None:
+            return {"status": "rejected", "reason": "unknown_room"}
+        room_id = canonical_room_id
         conflict = self.room_app.room_conflict(room_id, start_at, end_at)
         if conflict is not None:
             return {"status": "rejected", "reason": "room_conflict", **conflict}
@@ -83,8 +87,10 @@ class ResourceAllocationApp(App):
     def get_active_reservations(self, room_id: str) -> dict[str, Any]:
         """Return active reservations for a room without exposing internals."""
 
-        if room_id not in self.world.rooms:
+        canonical_room_id = self.world.resolve_room_id(room_id)
+        if canonical_room_id is None:
             return {"error": f"unknown room_id {room_id!r}"}
+        room_id = canonical_room_id
         reservations = [
             {
                 "reservation_id": item.reservation_id,

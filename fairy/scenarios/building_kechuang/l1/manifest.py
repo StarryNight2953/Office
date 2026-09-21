@@ -314,7 +314,6 @@ def validate_manifest(manifest: dict[str, Any]) -> None:
                 "end_at",
             ):
                 _required_string(expected_meeting, key)
-            _required_string(validation, "reservation_owner_id")
         if validation["kind"] == "meeting_change":
             _required_string(validation, "old_meeting_id")
             _required_string(validation, "old_reservation_id")

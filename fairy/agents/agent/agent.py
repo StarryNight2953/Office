@@ -46,6 +46,10 @@ def _is_rate_limit_error(error: Exception) -> bool:
 
 class Agent(BaseAgent):
 
+    terminal_tool_names = frozenset(
+        {"AgentUserInterface__send_message_to_user"}
+    )
+
     def __init__(
         self,
         name,
@@ -348,6 +352,41 @@ class Agent(BaseAgent):
             return max(0.0, self.rate_limit_retry_sleep_seconds)
         return max(0.0, self.llm_retry_sleep_seconds)
 
+    def _try_finish(self) -> bool:
+        """Return whether the run may finish, publishing blockers if not."""
+
+        guard = self.completion_guard
+        guard_result = guard() if guard is not None else None
+        if isinstance(guard_result, Mapping) and not bool(
+            guard_result.get("can_finish", True)
+        ):
+            self.completion_guard_rejections += 1
+            blockers = list(guard_result.get("blockers", []))
+            notice = (
+                "Completion rejected by the Building operational guard. "
+                "The task still has public blockers. Call "
+                "BuildingOperationsApp__get_operational_status, resolve or "
+                "wait through them, then attempt completion again. "
+                f"Blockers: {json.dumps(blockers, ensure_ascii=False)}"
+            )
+            self.messages.controller_notify(notice, time=self.env_time_str())
+            self.workflow.add_node(
+                WorkflowStep(
+                    op_type="CONTROLLER",
+                    content=notice,
+                    time=self.env_time_str(),
+                )
+            )
+            self.record_event(
+                "completion_guard_rejected",
+                status="continue",
+                rejection_count=self.completion_guard_rejections,
+                blockers=blockers,
+            )
+            return False
+        self.stop_reason = "agent_finished"
+        return True
+
     def run(
         self,
         input,
@@ -371,6 +410,7 @@ class Agent(BaseAgent):
         )
         self.messages.user_input(input, time=env_ts)
         self.workflow.add_node(WorkflowStep(op_type="USER", content=input, time=env_ts))
+        final_answer = None
 
         try:
             while True:
@@ -378,7 +418,7 @@ class Agent(BaseAgent):
                 self._check_limits(max_tool_calls=max_tool_calls, timeout_seconds=timeout_seconds)
                 turn_context = self.before_llm_turn(str(input))
                 if turn_context.strip():
-                    self.messages.system_notify(turn_context, time=self.env_time_str())
+                    self.messages.controller_notify(turn_context, time=self.env_time_str())
                     self.record_event(
                         "controller_context",
                         status="ok",
@@ -390,39 +430,21 @@ class Agent(BaseAgent):
                 self.llm_turn_count += 1
                 self.after_llm_message(message)
                 if not message.tool_calls:
-                    guard = self.completion_guard
-                    guard_result = guard() if guard is not None else None
-                    if isinstance(guard_result, Mapping) and not bool(
-                        guard_result.get("can_finish", True)
-                    ):
-                        self.completion_guard_rejections += 1
-                        blockers = list(guard_result.get("blockers", []))
-                        notice = (
-                            "Completion rejected by the Building operational guard. "
-                            "The task still has public blockers. Call "
-                            "BuildingOperationsApp__get_operational_status, resolve or "
-                            "wait through them, then attempt completion again. "
-                            f"Blockers: {json.dumps(blockers, ensure_ascii=False)}"
-                        )
-                        self.messages.system_notify(notice, time=self.env_time_str())
+                    if not self._try_finish():
+                        continue
+                    final_answer = message.content
+                    if str(message.content or "").strip():
                         self.workflow.add_node(
                             WorkflowStep(
-                                op_type="system",
-                                content=notice,
+                                op_type="ASSISTANT",
+                                content=message.content,
                                 time=self.env_time_str(),
                             )
                         )
-                        self.record_event(
-                            "completion_guard_rejected",
-                            status="continue",
-                            rejection_count=self.completion_guard_rejections,
-                            blockers=blockers,
-                        )
-                        continue
-                    self.stop_reason = "agent_finished"
                     break
 
                 # === handle tool calls ===
+                terminal_tool_called = False
                 for tool_call in message.tool_calls:
                     self._check_limits(max_tool_calls=max_tool_calls, timeout_seconds=timeout_seconds)
                     try:
@@ -431,6 +453,11 @@ class Agent(BaseAgent):
                         self.after_agent_error(exc.original)
                         continue
                     self.after_tool_response(tool_call, tool_response)
+                    if tool_call.function.name in self.terminal_tool_names:
+                        terminal_tool_called = True
+                        final_answer = tool_response
+                if terminal_tool_called and self._try_finish():
+                    break
             wall_elapsed = round(time.perf_counter() - self.run_started_at_wall, 6)
             self.after_agent_run()
             self.record_event(
@@ -441,7 +468,7 @@ class Agent(BaseAgent):
                 tool_call_count=self.tool_call_count,
                 llm_turn_count=self.llm_turn_count,
             )
-            return message.content
+            return final_answer
         except Exception as exc:
             wall_elapsed = round(time.perf_counter() - self.run_started_at_wall, 6)
             if (

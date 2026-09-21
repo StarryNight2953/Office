@@ -41,10 +41,14 @@ class OccupancyApp(App):
     def get_room_occupancy(self, room_id: str) -> dict[str, Any]:
         """Return the aggregate observable occupancy count for one room."""
 
+        canonical_room_id = self.world.resolve_room_id(room_id)
+        if canonical_room_id is None:
+            return {"error": f"unknown room_id {room_id!r}"}
+        room_id = canonical_room_id
         room = self.world.rooms.get(room_id)
         state = self.world.room_states.get(room_id)
         if room is None or state is None:
-            return {"error": f"unknown room_id {room_id!r}"}
+            return {"error": f"room state unavailable for {room_id!r}"}
         return {
             "room_id": room_id,
             "occupancy_count": state.occupancy_count,

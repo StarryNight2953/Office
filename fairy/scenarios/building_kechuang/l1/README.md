@@ -72,3 +72,80 @@ generated/ 不应手工修改。能力身份、代表输入、来源映射、Ora
     python -m unittest tests.test_building_l1_diagnostic -v
 
 正式测试覆盖 manifest schema、跨 L3 来源链接、716 个源动作的唯一能力映射、幂等重建、生成文件一致性、12 个 fresh-instance Oracle，以及 do-nothing、漏关键动作和漏确认负例。
+
+## Qwen 真实模型手动实验
+
+从仓库根目录运行。Runner 使用与 Building L3 相同的 `building_baseline_react`、vLLM、
+串行工具调用、独立子进程和 Validation 汇总协议。默认 endpoint 和 model 与 L3 runner
+一致，也可用 `--endpoint`、`--model` 覆盖。请先进入此前运行 L3 所用的 Python/Conda
+环境；该环境需要能够 `import openai`。
+
+先只做模型发现和 function-call 预检，不运行场景：
+
+```powershell
+python -m scripts.building_l1_live_runner --preflight-only
+```
+
+然后运行单场 HVAC smoke：
+
+```powershell
+python -m scripts.building_l1_live_runner `
+  --stage smoke `
+  --output-root runs/building_qwen_l1_smoke
+```
+
+建议在 smoke 通过后运行 6 场 diagnostic；它覆盖单设备控制、打印、预约、需求变更、
+会后恢复和共享功率约束：
+
+```powershell
+python -m scripts.building_l1_live_runner `
+  --stage diagnostic `
+  --output-root runs/building_qwen_l1_diagnostic
+```
+
+若只想复测此前失败的通风控制和共享功率约束两个场景，可运行：
+
+```powershell
+python -m scripts.building_l1_live_runner `
+  --stage repair `
+  --output-root runs/building_qwen_l1_repair
+```
+
+若只想运行会议预约和会议需求变更两个端到端场景，可运行：
+
+```powershell
+python -m scripts.building_l1_live_runner `
+  --stage meeting `
+  --output-root runs/building_qwen_l1_meeting_fixed
+```
+
+最后运行 manifest 中全部 12 场：
+
+```powershell
+python -m scripts.building_l1_live_runner `
+  --stage all `
+  --output-root runs/building_qwen_l1_all
+```
+
+不传 `--output-root` 时，也会自动写入带 UTC 时间戳的
+`runs/building_qwen_l1_<timestamp>/`。同一命令再次运行时会复用已有
+`run_report.json`，适合中断后继续；要强制重跑已有场景可加 `--rerun`。已经单独完成
+preflight 后，可在后续批次加 `--skip-preflight`。
+
+常用的完整参数示例：
+
+```powershell
+python -m scripts.building_l1_live_runner `
+  --stage all `
+  --endpoint http://100.115.106.71:8000/v1 `
+  --model Qwen3.6-35B-A3B-FP8 `
+  --max-tool-calls 80 `
+  --timeout-seconds 900 `
+  --max-output-tokens 4096 `
+  --output-root runs/building_qwen_l1_all
+```
+
+批次完成或中断后，先查看 `summary.md`。每个场景目录包含
+`<scenario_id>.run_report.json`、`progress.jsonl`、`runtime_log.jsonl`、
+`agent_workflow.json`、`stdout.log` 和 `stderr.log`。自然语言最终回答仅供阅读，是否通过
+以 run report 中的 `evaluation.validation.success` 为准。

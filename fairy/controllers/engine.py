@@ -128,9 +128,9 @@ class Engine:
         message = event.step()
         time_str = self._env_time_str()
         if self.agent is not None:
-            self.agent.messages.system_notify(message, time=time_str)
+            self.agent.messages.controller_notify(message, time=time_str)
             self.agent.workflow.add_node(
-                WorkflowStep(op_type="system", content=message, time=time_str)
+                WorkflowStep(op_type="CONTROLLER", content=message, time=time_str)
             )
         event.triggered = True
 

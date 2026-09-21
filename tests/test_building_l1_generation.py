@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 
 from fairy.controllers.engine import Engine
+from fairy.scenarios.workflow import WorkflowStep
 from fairy.scenarios.building_kechuang.l1.manifest import (
     ManifestError,
     WRITE_TOOLS,
@@ -281,6 +282,144 @@ class BuildingL1GenerationTests(unittest.TestCase):
                     report["validation"]["metadata"]["conditions"][
                         "completion_observed_after_actions"
                     ]
+                )
+
+    def test_meeting_booking_accepts_model_chosen_request_id(self):
+        contract = next(
+            item
+            for item in self.contracts
+            if item["validation"]["kind"] == "meeting_booking"
+        )
+        self.assertNotIn("reservation_owner_id", contract["validation"])
+        scenario_class = _scenario_class(contract)
+        oracle = Engine(None, scenario_class()).build_oracle_workflow(
+            run_oracle=False
+        )
+        alternative = copy.deepcopy(oracle)
+        create_step = next(
+            step
+            for step in alternative.dag.values()
+            if step.tool_name == "ScheduleApp__create_meeting"
+        )
+        create_step.tool_args["request_id"] = "model-chosen-request-id"
+
+        replay_engine = Engine(None, scenario_class())
+        replayed = replay_engine.replay_workflow(alternative)
+        report = replay_engine.evaluation_report(replayed)
+
+        self.assertTrue(
+            report["validation"]["success"],
+            report["validation"]["rationale"],
+        )
+
+    def test_meeting_prompts_publish_required_inputs_and_confirmation(self):
+        contracts = {
+            item["validation"]["kind"]: item
+            for item in self.contracts
+            if item["validation"]["kind"]
+            in {"meeting_booking", "meeting_change"}
+        }
+        for contract in contracts.values():
+            self.assertNotIn("reservation_owner_id", contract["validation"])
+            self.assertIn("有效预约", contract["task"]["prompt"])
+
+        change = contracts["meeting_change"]
+        prompt = change["task"]["prompt"]
+        expected = change["validation"]["expected_meeting"]
+        self.assertIn("existing-001", prompt)
+        self.assertIn("staff-01", prompt)
+        self.assertIn(str(expected["expected_attendees"]), prompt)
+        self.assertIn("2026-09-10 14:00 至 15:00", prompt)
+        self.assertIn(expected["participant_ids"][0], prompt)
+        self.assertEqual(expected["required_capabilities"], ["projector"])
+        self.assertIn("投影设备", prompt)
+
+    def test_device_state_accepts_per_target_state_confirmation(self):
+        for contract in self.contracts:
+            if contract["validation"]["kind"] != "device_state":
+                continue
+            with self.subTest(scenario_id=contract["scenario_id"]):
+                scenario_class = _scenario_class(contract)
+                oracle = Engine(
+                    None, scenario_class()
+                ).build_oracle_workflow(run_oracle=False)
+                alternative = copy.deepcopy(oracle)
+                steps = list(alternative.dag.items())
+                action_positions = [
+                    index
+                    for index, (_, step) in enumerate(steps)
+                    if step.tool_name in WRITE_TOOLS
+                ]
+                last_action = max(action_positions)
+                overview_steps = [
+                    name
+                    for index, (name, step) in enumerate(steps)
+                    if index > last_action
+                    and step.tool_name
+                    == "BuildingWorldApp__get_building_overview"
+                ]
+                self.assertTrue(overview_steps)
+                for name in overview_steps:
+                    alternative.dag.pop(name)
+                target_ids = sorted(
+                    {
+                        step["args"]["device_id"]
+                        for step in contract["oracle_steps"]
+                        if step["tool"] in WRITE_TOOLS
+                        and "device_id" in step.get("args", {})
+                    }
+                )
+                for index, device_id in enumerate(target_ids, start=1):
+                    alternative.add_node(
+                        WorkflowStep(
+                            name=f"confirm_target_device_{index:02d}",
+                            op_type="TOOL",
+                            tool_name="DeviceRegistryApp__get_device_state",
+                            tool_args={"device_id": device_id},
+                        )
+                    )
+
+                replay_engine = Engine(None, scenario_class())
+                replayed = replay_engine.replay_workflow(alternative)
+                report = replay_engine.evaluation_report(replayed)
+
+                self.assertTrue(
+                    report["validation"]["success"],
+                    report["validation"]["rationale"],
+                )
+
+    def test_plain_assistant_completion_counts_as_report(self):
+        for contract in self.contracts:
+            with self.subTest(scenario_id=contract["scenario_id"]):
+                scenario_class = _scenario_class(contract)
+                oracle = Engine(
+                    None, scenario_class()
+                ).build_oracle_workflow(run_oracle=False)
+                alternative = copy.deepcopy(oracle)
+                report_steps = [
+                    name
+                    for name, step in alternative.dag.items()
+                    if step.tool_name
+                    == "AgentUserInterface__send_message_to_user"
+                ]
+                self.assertTrue(report_steps)
+                for name in report_steps:
+                    alternative.dag.pop(name)
+                alternative.add_node(
+                    WorkflowStep(
+                        name="assistant_final_report",
+                        op_type="ASSISTANT",
+                        content=contract["task"]["completion_report"],
+                    )
+                )
+
+                replay_engine = Engine(None, scenario_class())
+                replayed = replay_engine.replay_workflow(alternative)
+                report = replay_engine.evaluation_report(replayed)
+
+                self.assertTrue(
+                    report["validation"]["success"],
+                    report["validation"]["rationale"],
                 )
 
 

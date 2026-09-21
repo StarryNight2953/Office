@@ -18,6 +18,16 @@ class Messages:
     def system_notify(self, input,time=None):
         self.messages.append({"role": "system", "content": input,"time": time})
 
+    def controller_notify(self, input, time=None):
+        """Append runtime controller context without adding a mid-chat system role."""
+        self.messages.append(
+            {
+                "role": "user",
+                "content": f"[Controller notice]\n{input}",
+                "time": time,
+            }
+        )
+
     def llm_response(self, response, elapsed_time):
 
         # if tools is not None and response.choices[0].message.tool_calls:

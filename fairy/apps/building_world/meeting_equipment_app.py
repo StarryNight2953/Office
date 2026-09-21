@@ -57,6 +57,10 @@ class MeetingEquipmentApp(App):
     @data_tool()
     @event_registered(operation_type=OperationType.READ)
     def get_meeting_equipment_readiness(self, room_id: str) -> dict[str, Any]:
+        canonical_room_id = self.world.resolve_room_id(room_id)
+        if canonical_room_id is None:
+            return {"error": f"unknown room_id {room_id!r}"}
+        room_id = canonical_room_id
         rows = []
         for device_id, spec in self.world.devices.items():
             if spec.room_id != room_id or spec.device_type not in {

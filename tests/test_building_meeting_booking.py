@@ -2,6 +2,8 @@ from fairy.agents.agent.toolset_builder import build_toolset
 from fairy.apps.agent_user_interface import AgentUserInterface
 from fairy.apps.building_world import (
     BuildingWorldApp,
+    MeetingEquipmentApp,
+    OccupancyApp,
     ResourceAllocationApp,
     RoomApp,
     ScheduleApp,
@@ -62,6 +64,25 @@ def test_create_meeting_reserves_room_and_emits_causal_events() -> None:
         BuildingEventType.SCHEDULE_CREATED,
     ]
     assert world.events[1].parent_event_id == world.events[0].event_id
+
+
+def test_agent_facing_room_ids_are_case_insensitive() -> None:
+    world, _, allocation, schedule = _apps()
+    result = _create(schedule, room_id="ROOM-01")
+
+    assert result["status"] == "confirmed"
+    assert result["meeting"]["room_id"] == "room-01"
+    room_schedule = schedule.get_room_schedule("ROOM-01", START_AT, END_AT)
+    assert room_schedule["room_id"] == "room-01"
+    assert allocation.get_active_reservations("ROOM-01")["room_id"] == (
+        "room-01"
+    )
+    assert OccupancyApp(world).get_room_occupancy("ROOM-01")["room_id"] == (
+        "room-01"
+    )
+    assert MeetingEquipmentApp(world).get_meeting_equipment_readiness(
+        "ROOM-01"
+    )["room_id"] == "room-01"
 
 
 def test_meeting_tool_schema_preserves_string_array_arguments() -> None:

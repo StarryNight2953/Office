@@ -84,8 +84,10 @@ class ScheduleApp(App):
     ) -> dict[str, Any]:
         """Return confirmed meetings occupying a room in a time window."""
 
-        if room_id not in self.world.rooms:
+        canonical_room_id = self.world.resolve_room_id(room_id)
+        if canonical_room_id is None:
             return {"error": f"unknown room_id {room_id!r}"}
+        room_id = canonical_room_id
         try:
             start, end = parse_interval(start_at, end_at)
         except ValueError as exc:
@@ -141,9 +143,11 @@ class ScheduleApp(App):
             return _rejected("invalid_attendee_count")
         if expected_attendees < len(set(participant_ids) | {organizer_id}):
             return _rejected("attendee_count_below_named_people")
-        room = self.world.rooms.get(room_id)
-        if room is None:
+        canonical_room_id = self.world.resolve_room_id(room_id)
+        if canonical_room_id is None:
             return _rejected("unknown_room", room_id=room_id)
+        room_id = canonical_room_id
+        room = self.world.rooms[room_id]
         if not room.bookable:
             return _rejected("room_not_bookable", room_id=room_id)
         if expected_attendees > room.capacity:

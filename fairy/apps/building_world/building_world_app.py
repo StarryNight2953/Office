@@ -53,6 +53,19 @@ class BuildingWorldApp(App):
         self._id_counters[prefix] = value
         return f"{prefix}-{value:04d}"
 
+    def resolve_room_id(self, room_id: str) -> str | None:
+        """Resolve a user-facing room ID to its canonical stored spelling."""
+
+        if room_id in self.rooms:
+            return room_id
+        folded = room_id.casefold()
+        matches = [
+            candidate
+            for candidate in self.rooms
+            if candidate.casefold() == folded
+        ]
+        return matches[0] if len(matches) == 1 else None
+
     def add_room(self, room: RoomSpec) -> None:
         if room.room_id in self.rooms:
             raise ValueError(f"room {room.room_id!r} already exists")
