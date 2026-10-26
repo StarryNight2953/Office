@@ -1,19 +1,21 @@
 from __future__ import annotations
 
 import inspect
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
-from functools import wraps
 from types import UnionType
 from typing import (
     Annotated,
     Any,
-    Callable,
     Literal,
+    NotRequired,
+    Required,
     Union,
     get_args,
     get_origin,
     get_type_hints,
+    is_typeddict,
 )
 
 
@@ -80,9 +82,12 @@ class AppTool:
 
 
 def _json_type(type_name: str) -> str:
-    return {"str": "string", "int": "integer", "float": "number", "bool": "boolean"}.get(
-        type_name, "string"
-    )
+    return {
+        "str": "string",
+        "int": "integer",
+        "float": "number",
+        "bool": "boolean",
+    }.get(type_name, "string")
 
 
 def _json_schema(type_obj: Any) -> dict[str, Any]:
@@ -96,6 +101,29 @@ def _json_schema(type_obj: Any) -> dict[str, Any]:
 
     origin = get_origin(type_obj)
     args = get_args(type_obj)
+    if type_obj is Any:
+        return {}
+    if origin in {Required, NotRequired}:
+        return _json_schema(args[0])
+    if is_typeddict(type_obj):
+        hints = get_type_hints(type_obj, include_extras=True)
+        # Resolve qualifiers explicitly: postponed annotations can make
+        # __required_keys__ inaccurate until get_type_hints is evaluated.
+        required = [
+            name
+            for name, hint in hints.items()
+            if get_origin(hint) is Required
+            or (
+                get_origin(hint) is not NotRequired
+                and name in type_obj.__required_keys__
+            )
+        ]
+        return {
+            "type": "object",
+            "properties": {name: _json_schema(hint) for name, hint in hints.items()},
+            "required": required,
+            "additionalProperties": False,
+        }
     if origin is Annotated:
         base_type, *metadata = args
         schema = _json_schema(base_type)
@@ -108,6 +136,11 @@ def _json_schema(type_obj: Any) -> dict[str, Any]:
     if origin in {list, tuple, set, frozenset}:
         item_type = args[0] if args else str
         return {"type": "array", "items": _json_schema(item_type)}
+    if origin is dict:
+        return {
+            "type": "object",
+            "additionalProperties": _json_schema(args[1]) if len(args) > 1 else {},
+        }
     if origin is Literal:
         values = list(args)
         primitive = type(values[0]) if values else str
@@ -158,7 +191,7 @@ def user_tool(func: Callable[..., Any] | None = None, **_: Any):
 
 def agent_tool(func: Callable[..., Any] | None = None, *, doc_enabled: bool = True):
     def decorator(f: Callable[..., Any]) -> Callable[..., Any]:
-        setattr(f, "is_agent_tool", True)
+        f.is_agent_tool = True
         setattr(f, ToolAttributeName.APP.value, True)
         if not doc_enabled:
             f.__doc__ = ""
@@ -167,7 +200,9 @@ def agent_tool(func: Callable[..., Any] | None = None, *, doc_enabled: bool = Tr
     return decorator if func is None else decorator(func)
 
 
-def build_tool(instance: Any, func: Callable[..., Any], failure_probability=None) -> AppTool:
+def build_tool(
+    instance: Any, func: Callable[..., Any], failure_probability=None
+) -> AppTool:
     sig = inspect.signature(func)
     # ``include_extras`` preserves Annotated range metadata for tool schemas.
     hints = get_type_hints(func, include_extras=True)
@@ -194,5 +229,6 @@ def build_tool(instance: Any, func: Callable[..., Any], failure_probability=None
         args=args,
         function=func,
         class_instance=instance,
-        write_operation=getattr(func, "_event_operation_type", None) == OperationType.WRITE,
+        write_operation=getattr(func, "_event_operation_type", None)
+        == OperationType.WRITE,
     )

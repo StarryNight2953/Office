@@ -35,7 +35,8 @@ dist/
 runs/
 fos_exports/
 workflow_exports/
-*.log
+*.log/
+reports
 
 # Local planning and advisor review notes
 .planning/

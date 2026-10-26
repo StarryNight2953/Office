@@ -1,14 +1,11 @@
 # agents/agent/agent.py
 
-import time
 import json
-import re
 import os
-from pathlib import Path
-from collections import deque, OrderedDict
-from datetime import datetime, timezone, timedelta
-from typing import Any
+import time
 from collections.abc import Callable, Mapping
+from datetime import datetime, timedelta, timezone
+from typing import Any
 
 CST = timezone(timedelta(hours=8))
 
@@ -18,7 +15,7 @@ from fairy.scenarios.workflow import WorkflowStep
 
 
 class AgentRunLimitExceeded(RuntimeError):
-    def __init__(self, limit_type: str, limit_value: float | int):
+    def __init__(self, limit_type: str, limit_value: float):
         self.limit_type = limit_type
         self.limit_value = limit_value
         super().__init__(f"Agent run stopped by {limit_type}: {limit_value}")
@@ -41,6 +38,24 @@ def _is_rate_limit_error(error: Exception) -> bool:
         or "error code: 429" in text
         or "http/1.1 429" in text
         or "status code: 429" in text
+    )
+
+
+def _is_non_retryable_llm_error(error: Exception) -> bool:
+    """Do not retry requests that the provider says cannot fit or are invalid."""
+
+    status_code = getattr(error, "status_code", None)
+    if status_code in {400, 413, 422}:
+        return True
+    message = str(error).lower()
+    return any(
+        marker in message
+        for marker in (
+            "maximum context length",
+            "context length exceeded",
+            "prompt is too long",
+            "too many tokens",
+        )
     )
 
 
@@ -84,13 +99,48 @@ class Agent(BaseAgent):
         # their historical termination semantics.
         self.completion_guard: Callable[[], Mapping[str, Any]] | None = None
         self.completion_guard_rejections = 0
+        # A trusted domain controller may finish a verified subtask or hand a
+        # blocked/deferred subtask back to its caller without another LLM turn.
+        self.run_resolution_guard: Callable[[], Mapping[str, Any] | None] | None = None
+        self.run_resolution: dict[str, Any] | None = None
+        self.max_completion_guard_rejections: int | None = None
+        self.progress_guard: Callable[[], Mapping[str, Any] | None] | None = None
+        self.max_stalled_progress_turns = 12
+        self._domain_progress_counts: dict[str, int] = {}
         self.max_llm_call_retries = int(os.getenv("FAIRY_AGENT_LLM_CALL_RETRIES", "5"))
         self.llm_retry_sleep_seconds = float(os.getenv("FAIRY_AGENT_LLM_RETRY_SLEEP_S", "0"))
         self.rate_limit_retry_sleep_seconds = float(
             os.getenv("FAIRY_AGENT_RATE_LIMIT_SLEEP_S", "30")
         )
+        # These opt-in controls affect only what is sent to the model, not the
+        # full messages/workflow retained for run artifacts.
+        self.max_prompt_chars: int | None = None
+        self.max_repeated_identical_calls: int | None = None
+        self._tool_fingerprint_counts: dict[tuple[str, str, str, float], int] = {}
+        self._identical_tool_call_count = 0
 
     def before_llm_turn(self, task: str) -> str:
+        if self.progress_guard is not None:
+            state = self.progress_guard()
+            if state is not None:
+                key = json.dumps(state, sort_keys=True, ensure_ascii=False, default=str)
+                count = self._domain_progress_counts.get(key, 0) + 1
+                self._domain_progress_counts[key] = count
+                if count >= self.max_stalled_progress_turns:
+                    self.stop_reason = "no_progress"
+                    self.record_event(
+                        "agent_limit_exceeded",
+                        status="stopped",
+                        limit_type="no_progress",
+                        limit_value=count,
+                        progress_state=state,
+                    )
+                    raise AgentRunLimitExceeded("no_progress", count)
+                if count == self.max_stalled_progress_turns // 2:
+                    return (
+                        "No material closeout progress. Time/status queries cannot clear "
+                        "these blockers; change the device/task strategy. " + key
+                    )
         return ""
 
     def after_llm_message(self, message: Any) -> None:
@@ -255,7 +305,127 @@ class Agent(BaseAgent):
             content_type=type(tool_response).__name__,
             content_preview=str(tool_response)[:500],
         )
+        self._observe_tool_progress(
+            name=name,
+            args=args,
+            response=tool_response,
+            time_before=env_time_before,
+            time_after=env_time_after,
+        )
         return tool_response
+
+    def _observe_tool_progress(
+        self,
+        *,
+        name: str,
+        args: dict[str, Any],
+        response: Any,
+        time_before: float,
+        time_after: float,
+    ) -> None:
+        limit = self.max_repeated_identical_calls
+        if limit is None or name in self.terminal_tool_names:
+            return
+        operation = name.rsplit("__", 1)[-1]
+        response_fingerprint = (
+            "state-changing-command"
+            if operation.startswith(("set_", "cancel_", "create_", "submit_"))
+            else json.dumps(self._jsonable(response), sort_keys=True, ensure_ascii=False)
+        )
+        if isinstance(response, Mapping) and isinstance(response.get("progress_key"), str):
+            response_fingerprint = response["progress_key"]
+        # TimeManager.time() includes wall-clock drift. Its offset changes only
+        # when simulation time is explicitly advanced, which is the progress
+        # boundary relevant to repeated model actions.
+        clock_offset = getattr(self.time_manager, "offset", None)
+        logical_time = (
+            float(clock_offset)
+            if clock_offset is not None
+            else float(int(time_after // 60))
+        )
+        fingerprint = (
+            name,
+            json.dumps(args, sort_keys=True, ensure_ascii=False, default=str),
+            response_fingerprint,
+            logical_time,
+        )
+        self._identical_tool_call_count = self._tool_fingerprint_counts.get(fingerprint, 0) + 1
+        self._tool_fingerprint_counts[fingerprint] = self._identical_tool_call_count
+        if self._identical_tool_call_count == max(2, limit // 2):
+            self.messages.controller_notify(
+                f"The same {name} call returned the same result "
+                f"{self._identical_tool_call_count} times without an explicit "
+                "time advance. Change strategy or advance time only after checking "
+                "urgent commitments; do not repeat this identical call.",
+                time=self.env_time_str(),
+            )
+        if self._identical_tool_call_count >= limit:
+            self.stop_reason = "no_progress"
+            self.record_event(
+                "agent_limit_exceeded",
+                status="stopped",
+                limit_type="no_progress",
+                limit_value=limit,
+                tool_name=name,
+                tool_call_count=self.tool_call_count,
+            )
+            raise AgentRunLimitExceeded("no_progress", limit)
+
+    def _prompt_messages(self) -> list[Any]:
+        """Return a bounded model view while keeping the audited history intact."""
+
+        limit = self.max_prompt_chars
+        full_history = self.messages()
+        if limit is None:
+            return full_history
+        compatible = self._llm_compatible_messages(full_history)
+
+        def size(message: dict[str, Any]) -> int:
+            return len(json.dumps(message, ensure_ascii=False, default=str))
+
+        if sum(size(item) for item in compatible) <= limit:
+            return compatible
+        first_user = next(
+            (index for index, item in enumerate(compatible) if item.get("role") == "user"),
+            len(compatible),
+        )
+        head = compatible[: first_user + 1]
+        marker = {
+            "role": "user",
+            "content": (
+                "[Controller notice] Older conversation turns were omitted from "
+                "this model request to stay within the context budget. The full "
+                "audit history is retained. Recheck current state with targeted "
+                "tools; do not repeat broad overview queries without a reason."
+            ),
+        }
+        available = max(0, limit - sum(size(item) for item in head) - size(marker))
+        tail: list[dict[str, Any]] = []
+        for original in reversed(compatible[first_user + 1 :]):
+            item = dict(original)
+            content = item.get("content")
+            if isinstance(content, str) and len(content) > 20_000:
+                item["content"] = (
+                    content[:20_000]
+                    + "\n[Tool/controller text truncated in prompt; full text remains in artifacts.]"
+                )
+            item_size = size(item)
+            if item_size > available:
+                break
+            tail.append(item)
+            available -= item_size
+        tail.reverse()
+        while tail and tail[0].get("role") == "tool":
+            tail.pop(0)
+        selected = [*head, marker, *tail]
+        self.record_event(
+            "prompt_context_compacted",
+            status="ok",
+            retained_message_count=len(selected),
+            omitted_message_count=len(compatible) - len(head) - len(tail),
+            prompt_chars=sum(size(item) for item in selected),
+        )
+        return selected
 
     def _append_tool_error_observation(
         self,
@@ -331,6 +501,8 @@ class Agent(BaseAgent):
             try:
                 return self.chat_completion(messages, tools=tools)
             except Exception as exc:
+                if _is_non_retryable_llm_error(exc):
+                    raise
                 if attempt >= self.max_llm_call_retries:
                     raise
                 attempt += 1
@@ -362,11 +534,19 @@ class Agent(BaseAgent):
         ):
             self.completion_guard_rejections += 1
             blockers = list(guard_result.get("blockers", []))
+            limit = self.max_completion_guard_rejections
+            if limit is not None and self.completion_guard_rejections >= limit:
+                self.stop_reason = "completion_verification"
+                self.record_event("agent_limit_exceeded", status="stopped",
+                    limit_type="completion_verification", limit_value=limit, blockers=blockers)
+                raise AgentRunLimitExceeded("completion_verification", limit)
+            required_action = guard_result.get("required_action", (
+                "Call BuildingOperationsApp__get_operational_status, resolve or "
+                "wait through the blockers, then attempt completion again."
+            ))
             notice = (
-                "Completion rejected by the Building operational guard. "
-                "The task still has public blockers. Call "
-                "BuildingOperationsApp__get_operational_status, resolve or "
-                "wait through them, then attempt completion again. "
+                "Completion rejected by the state verification guard. "
+                f"{required_action} "
                 f"Blockers: {json.dumps(blockers, ensure_ascii=False)}"
             )
             self.messages.controller_notify(notice, time=self.env_time_str())
@@ -387,6 +567,38 @@ class Agent(BaseAgent):
         self.stop_reason = "agent_finished"
         return True
 
+    def _resolve_run(self) -> dict[str, Any] | None:
+        if self.run_resolution_guard is None:
+            return None
+        resolution = self.run_resolution_guard()
+        if resolution is None:
+            return None
+        status = resolution.get("status")
+        if status not in {"ok", "blocked", "deferred"}:
+            raise ValueError("invalid controller run resolution")
+        # Successful early termination must satisfy the ordinary guard too.
+        if (
+            status == "ok"
+            and self.completion_guard is not None
+            and not self.completion_guard().get("can_finish", False)
+        ):
+            return None
+        self.run_resolution = dict(resolution)
+        self.stop_reason = (
+            "verified_postconditions" if status == "ok" else f"task_{status}"
+        )
+        self.record_event(
+            "controller_run_resolution", status=status, resolution=self.run_resolution
+        )
+        self.workflow.add_node(
+            WorkflowStep(
+                op_type="CONTROLLER",
+                content=self.run_resolution,
+                time=self.env_time_str(),
+            )
+        )
+        return self.run_resolution
+
     def run(
         self,
         input,
@@ -400,7 +612,11 @@ class Agent(BaseAgent):
         self.run_started_at_wall = time.perf_counter()
         self.run_wall_timeout_seconds = timeout_seconds
         self.stop_reason = None
+        self.run_resolution = None
         self.completion_guard_rejections = 0
+        self._tool_fingerprint_counts = {}
+        self._identical_tool_call_count = 0
+        self._domain_progress_counts = {}
         env_ts = self.env_time_str()
         self.record_event(
             "agent_run_start",
@@ -414,7 +630,10 @@ class Agent(BaseAgent):
 
         try:
             while True:
-
+                resolution = self._resolve_run()
+                if resolution is not None:
+                    final_answer = resolution.get("answer", "")
+                    break
                 self._check_limits(max_tool_calls=max_tool_calls, timeout_seconds=timeout_seconds)
                 turn_context = self.before_llm_turn(str(input))
                 if turn_context.strip():
@@ -425,7 +644,7 @@ class Agent(BaseAgent):
                         content_preview=turn_context[:1000],
                     )
                 message = self._chat_completion_with_retries(
-                    self.messages(), tools=self.tool_schemas
+                    self._prompt_messages(), tools=self.tool_schemas
                 )
                 self.llm_turn_count += 1
                 self.after_llm_message(message)
@@ -462,7 +681,7 @@ class Agent(BaseAgent):
             self.after_agent_run()
             self.record_event(
                 "agent_run_end",
-                status="ok",
+                status=(self.run_resolution or {}).get("status", "ok"),
                 stopped_reason=self.stop_reason,
                 wall_time_seconds=wall_elapsed,
                 tool_call_count=self.tool_call_count,
@@ -473,7 +692,7 @@ class Agent(BaseAgent):
             wall_elapsed = round(time.perf_counter() - self.run_started_at_wall, 6)
             if (
                 isinstance(exc, AgentRunLimitExceeded)
-                and self.stop_reason in {"max_tool_calls", "timeout"}
+                and self.stop_reason in {"max_tool_calls", "timeout", "no_progress", "completion_verification"}
             ):
                 self.after_agent_run()
                 self.record_event(

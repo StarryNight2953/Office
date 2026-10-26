@@ -36,6 +36,7 @@ from fairy.physics.building.orchestrator import (
 
 OutdoorProvider = Callable[[datetime], OutdoorConditions]
 ScheduledEventHandler = Callable[[ScheduledBuildingEvent, BuildingWorldApp], None]
+TriggerListener = Callable[[BuildingEvent, TriggerDecision], None]
 
 
 @dataclass(frozen=True)
@@ -84,6 +85,7 @@ class BuildingWorldRuntime:
         # are published.  Scenario-specific callbacks stay outside the queue,
         # keeping the queue serializable and replay-stable.
         self._event_handlers: dict[BuildingEventType, list[ScheduledEventHandler]] = {}
+        self._trigger_listeners: list[TriggerListener] = []
         self._world_event_cursor = len(self.world.events)
 
     @classmethod
@@ -227,6 +229,16 @@ class BuildingWorldRuntime:
         if handler not in handlers:
             handlers.append(handler)
 
+    def register_trigger_listener(self, listener: TriggerListener) -> None:
+        """Observe committed events after deterministic trigger classification.
+
+        Listener failures are isolated and recorded in ``trace`` so model-facing
+        control layers cannot interrupt physics or event-queue advancement.
+        """
+
+        if listener not in self._trigger_listeners:
+            self._trigger_listeners.append(listener)
+
     def initialize_observations(self) -> int:
         """Publish a time-zero sensor sample after scenario truth is configured."""
 
@@ -366,7 +378,7 @@ class BuildingWorldRuntime:
         events = list(self.world.events[self._world_event_cursor :])
         decisions = [self.trigger_policy.decide(event) for event in events]
         self._world_event_cursor = len(self.world.events)
-        for decision in decisions:
+        for event, decision in zip(events, decisions, strict=True):
             self.trace.append(
                 {
                     "kind": "trigger_decision",
@@ -376,6 +388,24 @@ class BuildingWorldRuntime:
                     "reason": decision.reason,
                 }
             )
+            for listener in tuple(self._trigger_listeners):
+                try:
+                    listener(event, decision)
+                # Event subscribers are external control/observability layers;
+                # none may stop deterministic Runtime advancement.
+                except Exception as exc:  # noqa: BLE001
+                    self.trace.append(
+                        {
+                            "kind": "trigger_listener_error",
+                            "event_id": event.event_id,
+                            "event_type": event.event_type.value,
+                            "listener": getattr(
+                                listener, "__qualname__", listener.__class__.__name__
+                            ),
+                            "error_type": type(exc).__name__,
+                            "error_message": str(exc),
+                        }
+                    )
         return events, decisions
 
     def _loads_by_zone(self) -> dict[str, InternalLoads]:

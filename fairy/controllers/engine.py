@@ -22,7 +22,7 @@ class EngineEnvironment:
     workflow: Workflow
     apps: list[Any]
     time_manager: TimeManager
-    engine: "Engine"
+    engine: Engine
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -36,8 +36,10 @@ class EngineEnvironment:
 class Engine:
     engine_name: str = "fairy_engine"
 
-    def __init__(self, agent: Any | None, scenario: Any):
-        self.time_manager = TimeManager()
+    def __init__(
+        self, agent: Any | None, scenario: Any, *, virtual_time: bool = False
+    ):
+        self.time_manager = TimeManager(include_wall_time=not virtual_time)
         self.start_time = scenario.start_time if scenario.start_time is not None else 0.0
         self.time_manager.reset(start_time=self.start_time)
         self.current_time = self.time_manager.time()

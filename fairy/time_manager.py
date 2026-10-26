@@ -1,12 +1,17 @@
 import time
 
+
 class TimeManager:
     """
     A class for managing time in the simulation.
     """
 
-    def __init__(self):
+    def __init__(self, *, include_wall_time: bool = True):
         current_time = time.time()
+
+        # Controlled evaluations can keep simulated time independent of model
+        # and tool latency while wall-time limits continue using perf_counter.
+        self.include_wall_time = include_wall_time
 
         # This is the actual real time, not the simulated time, with which we measure actual time passed.
         self.real_start_time: float | None = current_time
@@ -35,7 +40,7 @@ class TimeManager:
         """
         if self.real_start_time is None:
             raise Exception("real_start_time cannot be null")
-        return self.real_time_passed() + self.offset
+        return (self.real_time_passed() if self.include_wall_time else 0.0) + self.offset
 
     def real_time_passed(self) -> float:
         """

@@ -974,7 +974,7 @@ def test_agent_runtime_events_capture_llm_tool_metrics() -> None:
     assert agent.tool_call_count == 1
     assert agent.telemetry["tool_calls"] == 1
     assert agent.telemetry["llm_calls"] == 2
-    assert len(workflow) == 2
+    assert len(workflow) == 3  # USER, TOOL, and final ASSISTANT response.
     tool_step = next(step for step in workflow.dag.values() if step.op_type == "TOOL")
     assert isinstance(tool_step.time_before, float)
     assert isinstance(tool_step.time_after, float)
@@ -1664,6 +1664,18 @@ def test_run_report_exposes_human_stop_reason_and_wall_time() -> None:
         tool_call_count=3,
         runtime_metrics=[],
         artifacts={},
+        additional_metric_totals={
+            "llm_call_count": 2,
+            "tool_metric_count": 3,
+            "llm_wall_time_seconds": 1.25,
+            "tool_wall_time_seconds": 0.5,
+            "token_usage": {
+                "prompt_tokens": 10,
+                "completion_tokens": 4,
+                "total_tokens": 14,
+                "cached_tokens": 2,
+            },
+        },
     )
 
     assert report["status"] == "stopped"
@@ -1673,3 +1685,6 @@ def test_run_report_exposes_human_stop_reason_and_wall_time() -> None:
     assert report["system_prompt_mode"] == "are"
     assert report["limits"]["parallel_tool_calls"] is False
     assert report["limits"]["max_output_tokens"] == 2048
+    assert report["metrics"]["llm_call_count"] == 2
+    assert report["metrics"]["tool_metric_count"] == 3
+    assert report["metrics"]["token_usage"]["total_tokens"] == 14

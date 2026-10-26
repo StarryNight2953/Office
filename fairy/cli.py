@@ -133,6 +133,59 @@ def main() -> None:
         help="Controller family for --agent",
     )
     parser.add_argument(
+        "--building-agent-mode",
+        choices=("single", "multi"),
+        default="single",
+        help=(
+            "Building execution mode: keep the legacy single controller Agent "
+            "or use one supervisor plus room-scoped Agents"
+        ),
+    )
+    parser.add_argument(
+        "--fair-building-eval",
+        action="store_true",
+        help=(
+            "Use an explicit simulation clock and the same room-device "
+            "preflight in single and multi Building agent runs"
+        ),
+    )
+    parser.add_argument(
+        "--max-parallel-room-agents",
+        type=int,
+        default=4,
+        help="Maximum concurrently running room Agents in multi mode",
+    )
+    parser.add_argument(
+        "--room-max-tool-calls",
+        type=int,
+        default=40,
+        help="Maximum tool calls per delegated room-Agent run",
+    )
+    parser.add_argument(
+        "--room-timeout-seconds",
+        type=float,
+        default=300.0,
+        help="Wall-time limit per delegated room-Agent run",
+    )
+    parser.add_argument(
+        "--max-prompt-chars",
+        type=int,
+        default=None,
+        help="Maximum characters in each model request; full run artifacts stay intact",
+    )
+    parser.add_argument(
+        "--max-repeated-identical-calls",
+        type=int,
+        default=None,
+        help="Stop after this many identical tool results at unchanged simulation time",
+    )
+    parser.add_argument(
+        "--max-auto-dispatch-rounds",
+        type=int,
+        default=40,
+        help="Maximum automatic pending-event dispatch rounds per supervisor run",
+    )
+    parser.add_argument(
         "--system-prompt-mode",
         choices=FARM_SYSTEM_PROMPT_MODES,
         default="fairy",
@@ -269,6 +322,23 @@ def main() -> None:
         return
     if args.max_output_tokens <= 0:
         parser.error("--max-output-tokens must be a positive integer")
+    if args.max_parallel_room_agents <= 0:
+        parser.error("--max-parallel-room-agents must be a positive integer")
+    if args.room_max_tool_calls <= 0:
+        parser.error("--room-max-tool-calls must be a positive integer")
+    if args.room_timeout_seconds <= 0:
+        parser.error("--room-timeout-seconds must be positive")
+    if args.max_prompt_chars is not None and args.max_prompt_chars < 50_000:
+        parser.error("--max-prompt-chars must be at least 50000")
+    if (
+        args.max_repeated_identical_calls is not None
+        and args.max_repeated_identical_calls < 3
+    ):
+        parser.error("--max-repeated-identical-calls must be at least 3")
+    if args.max_auto_dispatch_rounds <= 0:
+        parser.error("--max-auto-dispatch-rounds must be a positive integer")
+    if args.building_agent_mode == "multi" and args.a2a:
+        parser.error("--a2a cannot be combined with --building-agent-mode=multi")
     if not args.scenario:
         parser.error("--scenario is required unless --list is used")
     scenario_class = get_scenario_class(args.scenario)
@@ -367,17 +437,22 @@ def main() -> None:
         progress_log_path = output_dir / f"{args.scenario}.progress.jsonl"
         if progress_log_path.exists():
             progress_log_path.unlink()
-        llm = BaseLLM.llm_builder(
-            {
-                "provider": args.provider,
-                "model": args.model,
-                "temperature": args.temperature,
-                "max_output_tokens": args.max_output_tokens,
-                "parallel_tool_calls": args.parallel_tool_calls,
-                **({"base_url": args.endpoint} if args.endpoint else {}),
-            }
-        )
+        llm_config = {
+            "provider": args.provider,
+            "model": args.model,
+            "temperature": args.temperature,
+            "max_output_tokens": args.max_output_tokens,
+            "parallel_tool_calls": args.parallel_tool_calls,
+            **({"base_url": args.endpoint} if args.endpoint else {}),
+        }
+        llm = BaseLLM.llm_builder(llm_config)
         scenario.setup(**init_kwargs)
+        if args.fair_building_eval and getattr(scenario, "building_runtime", None) is None:
+            parser.error("--fair-building-eval requires a Building scenario")
+        if args.fair_building_eval:
+            from fairy.apps.building_world.operations_app import BuildingOperationsApp
+
+            scenario.get_typed_app(BuildingOperationsApp).enable_fair_wait_policy()
         a2a_metadata = {"enabled": False}
         if args.a2a:
             app_provider = args.a2a_provider or args.provider
@@ -418,20 +493,87 @@ def main() -> None:
                 "provider": app_provider,
                 "endpoint": app_endpoint,
             }
-        agent = build_controller_agent(
-            args.controller,
-            llm=llm,
-            toolsets=scenario.apps,
-            system_message=get_system_prompt_for_run(
-                args.controller, args.scenario, args.system_prompt_mode
-            ),
-        )
+        multi_agent_system = None
+        if args.building_agent_mode == "multi":
+            from fairy.controllers.building import (
+                SUPERVISOR_COORDINATION_PROMPT,
+                build_building_multi_agent_system,
+                select_supervisor_toolsets,
+            )
+
+            building_runtime = getattr(scenario, "building_runtime", None)
+            if building_runtime is None:
+                parser.error(
+                    "--building-agent-mode=multi requires a Building scenario"
+                )
+            base_system_message = get_system_prompt_for_run(
+                args.controller,
+                args.scenario,
+                args.system_prompt_mode,
+            )
+            multi_agent_system = build_building_multi_agent_system(
+                world=building_runtime.world,
+                runtime=building_runtime,
+                supervisor_llm=llm,
+                room_llm_factory=lambda _room_id: BaseLLM.llm_builder(
+                    dict(llm_config)
+                ),
+                building_apps=scenario.apps or [],
+                supervisor_toolsets=select_supervisor_toolsets(
+                    scenario.apps or []
+                ),
+                default_room_max_tool_calls=args.room_max_tool_calls,
+                room_timeout_seconds=args.room_timeout_seconds,
+                max_prompt_chars=args.max_prompt_chars,
+                max_repeated_identical_calls=args.max_repeated_identical_calls,
+                max_supervisor_tool_calls=args.max_tool_calls,
+                supervisor_timeout_seconds=args.timeout_seconds,
+                max_parallel_room_agents=args.max_parallel_room_agents,
+                max_auto_dispatch_rounds=args.max_auto_dispatch_rounds,
+                supervisor_system_message=(
+                    f"{base_system_message}\n\n{SUPERVISOR_COORDINATION_PROMPT}"
+                ),
+            )
+            agent = multi_agent_system.supervisor
+        else:
+            agent = build_controller_agent(
+                args.controller,
+                llm=llm,
+                toolsets=scenario.apps,
+                system_message=get_system_prompt_for_run(
+                    args.controller, args.scenario, args.system_prompt_mode
+                ),
+            )
+            if args.fair_building_eval:
+                from fairy.apps.building_world.operations_app import (
+                    BuildingOperationsApp,
+                )
+                from fairy.controllers.building.fair_eval import (
+                    install_single_agent_room_preflight,
+                )
+
+                operations = scenario.get_typed_app(BuildingOperationsApp)
+                install_single_agent_room_preflight(agent, operations)
+        agent.max_prompt_chars = args.max_prompt_chars
+        agent.max_repeated_identical_calls = args.max_repeated_identical_calls
+        if args.fair_building_eval:
+            operations = scenario.get_typed_app(BuildingOperationsApp)
+            # Read the installed completion guard at call time: multi mode
+            # later adds pending-room blockers when attaching to the engine.
+            agent.progress_guard = lambda: operations.closeout_progress_state(
+                dict(agent.completion_guard()) if agent.completion_guard is not None else None
+            )
         agent.runtime_event_sink = lambda event: _append_live_progress(
             progress_log_path, event
         )
-        engine = Engine(agent=agent, scenario=scenario)
+        engine = Engine(
+            agent=agent,
+            scenario=scenario,
+            virtual_time=args.fair_building_eval,
+        )
+        if multi_agent_system is not None:
+            multi_agent_system.attach_engine(engine)
         workflow = None
-        final_message = None
         error = None
         stopped_reason = "agent_finished"
         try:
@@ -440,15 +582,12 @@ def main() -> None:
                 timeout_seconds=args.timeout_seconds,
                 setup_scenario=False,
             )
-            final_message = (
-                agent.messages.messages[-1] if agent.messages.messages else None
-            )
             stopped_reason = agent.stop_reason or "agent_finished"
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             stopped_reason = agent.stop_reason or "error"
             if not (
                 isinstance(exc, AgentRunLimitExceeded)
-                and stopped_reason in {"max_tool_calls", "timeout"}
+                and stopped_reason in {"max_tool_calls", "timeout", "no_progress"}
             ):
                 error = {
                     "type": type(exc).__name__,
@@ -457,7 +596,17 @@ def main() -> None:
             workflow = agent.workflow
         wall_time_seconds = round(time.perf_counter() - run_wall_start, 6)
         runtime_metrics = list(agent.messages.runtime_metrics)
+        room_metric_totals = (
+            multi_agent_system.room_metric_totals()
+            if multi_agent_system is not None
+            else None
+        )
         controller_telemetry = dict(getattr(agent, "telemetry", {}) or {})
+        if multi_agent_system is not None:
+            controller_telemetry = {
+                **controller_telemetry,
+                **multi_agent_system.telemetry(),
+            }
         artifacts: dict[str, str] = {}
         artifacts["progress_log"] = str(progress_log_path)
 
@@ -468,6 +617,37 @@ def main() -> None:
         runtime_log_path = output_dir / f"{args.scenario}.runtime_log.jsonl"
         write_jsonl(runtime_log_path, _runtime_log_rows(agent.runtime_events))
         artifacts["runtime_log"] = str(runtime_log_path)
+
+        if multi_agent_system is not None:
+            multi_agent_traces_path = (
+                output_dir / f"{args.scenario}.multi_agent_traces.json"
+            )
+            write_json(
+                multi_agent_traces_path,
+                {
+                    "rooms": multi_agent_system.registry.all_traces(),
+                    "room_run_ledgers": multi_agent_system.registry.all_run_ledgers(),
+                    "auto_dispatch": list(
+                        multi_agent_system.supervisor.auto_dispatch_history
+                    ),
+                    "routes": multi_agent_system.router.snapshot()["routes"],
+                },
+            )
+            artifacts["multi_agent_traces"] = str(multi_agent_traces_path)
+            multi_agent_state_path = (
+                output_dir / f"{args.scenario}.multi_agent_state.json"
+            )
+            write_json(multi_agent_state_path, multi_agent_system.snapshot())
+            artifacts["multi_agent_state"] = str(multi_agent_state_path)
+
+        if args.fair_building_eval:
+            device_plan_path = output_dir / f"{args.scenario}.device_plan_actions.json"
+            write_json(device_plan_path, operations.device_plan_actions)
+            artifacts["device_plan_actions"] = str(device_plan_path)
+            controller_telemetry.update(
+                device_plan_action_count=len(operations.device_plan_actions),
+                reconciled_wait_event_count=operations.reconciled_wait_event_count,
+            )
 
         if a2a_metadata.get("enabled"):
             a2a_traces = collect_a2a_traces(list(scenario.apps or []))
@@ -507,7 +687,14 @@ def main() -> None:
             parallel_tool_calls=args.parallel_tool_calls,
             max_output_tokens=args.max_output_tokens,
             workflow_steps=len(workflow),
-            tool_call_count=agent.tool_call_count,
+            tool_call_count=(
+                agent.tool_call_count
+                + (
+                    int(multi_agent_system.telemetry()["room_tool_call_count"])
+                    if multi_agent_system is not None
+                    else 0
+                )
+            ),
             runtime_metrics=runtime_metrics,
             artifacts=artifacts,
             evaluation=evaluation,
@@ -515,7 +702,45 @@ def main() -> None:
             error=error,
             controller_telemetry=controller_telemetry,
             a2a=a2a_metadata,
+            additional_metric_totals=room_metric_totals,
         )
+        run_report["limits"].update(
+            {
+                "fair_building_eval": args.fair_building_eval,
+                "fair_building_protocol": (
+                    "building_l3_fair_ab_v5" if args.fair_building_eval else None
+                ),
+                "feasible_device_contracts": args.fair_building_eval,
+                "guarded_device_plans": args.fair_building_eval,
+                "same_room_goal_coalescing": args.fair_building_eval,
+                "approved_plan_wait": args.fair_building_eval,
+                "verified_wait_event_continuation": args.fair_building_eval,
+                "background_room_mutation": False,
+                "room_usage_accounting": "lifetime_across_resets",
+                "adaptive_plateau_monitoring": args.fair_building_eval,
+                "automatic_bounded_wait": args.fair_building_eval,
+                "operational_horizon_clamp": args.fair_building_eval,
+                "closeout_no_progress_turn_limit": (
+                    agent.max_stalled_progress_turns if args.fair_building_eval else None
+                ),
+                "simulation_clock": (
+                    "explicit" if args.fair_building_eval else "wall_plus_offset"
+                ),
+                "max_prompt_chars": args.max_prompt_chars,
+                "max_repeated_identical_calls": args.max_repeated_identical_calls,
+                "room_max_tool_calls": (
+                    args.room_max_tool_calls if multi_agent_system is not None else None
+                ),
+                "room_timeout_seconds": (
+                    args.room_timeout_seconds if multi_agent_system is not None else None
+                ),
+            }
+        )
+        if args.fair_building_eval:
+            run_report["metrics"].update(
+                device_plan_action_count=len(operations.device_plan_actions),
+                reconciled_wait_event_count=operations.reconciled_wait_event_count,
+            )
         write_json(report_path, run_report)
         _cleanup_repo_side_exports()
         print(f"agent_workflow={workflow_path}")

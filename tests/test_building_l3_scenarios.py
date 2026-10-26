@@ -1,19 +1,72 @@
 """Contract tests for the twenty Spec-driven Building L3 scenarios."""
 
+import json
+from types import SimpleNamespace
+
 import pytest
 
 from fairy.agents.agent.toolset_builder import build_toolset
 from fairy.apps.building_world import (
     BuildingSensorApp,
     BuildingWorldApp,
-    HvacApp,
     PrintingApp,
 )
 from fairy.apps.system import SystemApp
+from fairy.controllers.building import (
+    RoomScopedToolset,
+    build_building_multi_agent_system,
+    select_supervisor_toolsets,
+)
 from fairy.controllers.engine import Engine
 from fairy.scenarios.building_kechuang.l3.catalog import L3_SPECS
 from fairy.scenarios.building_kechuang.l3.scenarios import L3_SCENARIO_CLASSES
 from fairy.scenarios.registry import get_scenario_class, list_scenarios
+
+
+class _ScriptedLLM:
+    provider = "openai"
+    model = "scripted-l3-multi-agent"
+
+    def __init__(self, messages: list[SimpleNamespace]) -> None:
+        self.messages = list(messages)
+
+    def chat_completion(self, messages, tools=None):
+        message = (
+            self.messages.pop(0)
+            if self.messages
+            else SimpleNamespace(content="done", tool_calls=None)
+        )
+        usage = SimpleNamespace(
+            prompt_tokens=5,
+            completion_tokens=2,
+            total_tokens=7,
+            prompt_tokens_details=SimpleNamespace(cached_tokens=0),
+        )
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=message)],
+            usage=usage,
+        )
+
+
+def _assistant_message(
+    content: str | None = None,
+    *,
+    tool_name: str | None = None,
+    tool_args: dict | None = None,
+) -> SimpleNamespace:
+    tool_calls = None
+    if tool_name is not None:
+        tool_calls = [
+            SimpleNamespace(
+                id=f"call_{tool_name}",
+                type="function",
+                function=SimpleNamespace(
+                    name=tool_name,
+                    arguments=json.dumps(tool_args or {}),
+                ),
+            )
+        ]
+    return SimpleNamespace(content=content, tool_calls=tool_calls)
 
 
 def _replay(scenario_class):
@@ -48,6 +101,85 @@ def test_all_twenty_l3_scenarios_are_registered() -> None:
     for spec, scenario_class in zip(L3_SPECS, L3_SCENARIO_CLASSES):
         assert spec.scenario_id in registered
         assert get_scenario_class(spec.scenario_id) is scenario_class
+
+
+@pytest.mark.parametrize("scenario_class", L3_SCENARIO_CLASSES)
+def test_multi_agent_roles_cover_every_l3_oracle_tool(scenario_class) -> None:
+    scenario = scenario_class()
+    scenario.setup()
+    engine = Engine(None, scenario)
+    world = scenario.get_typed_app(BuildingWorldApp)
+    room_id = next(iter(world.rooms))
+
+    _, supervisor_schemas, _ = build_toolset(
+        [world, *select_supervisor_toolsets(scenario.apps or [])]
+    )
+    supervisor_tool_names = {
+        item["function"]["name"] for item in supervisor_schemas
+    }
+    room_tool_names = {
+        tool.to_open_ai()["function"]["name"]
+        for tool in RoomScopedToolset(
+            world=world,
+            room_id=room_id,
+            apps=scenario.apps or [],
+        ).get_tools()
+    }
+    oracle = engine.build_oracle_workflow(run_oracle=False)
+    required_tool_names = {
+        step.tool_name
+        for step in oracle.dag.values()
+        if step.op_type == "TOOL" and step.tool_name
+    }
+
+    missing = required_tool_names - supervisor_tool_names - room_tool_names
+    assert not missing, (
+        f"{scenario.spec.scenario_id} has tools unavailable to both roles: "
+        f"{sorted(missing)}"
+    )
+    assert "HvacApp__set_hvac" in room_tool_names
+    assert "HvacApp__set_hvac" not in supervisor_tool_names
+    assert "SystemApp__advance_time" in supervisor_tool_names
+
+
+def test_multi_agent_consumes_l3_runtime_event_between_supervisor_turns() -> None:
+    scenario = L3_SCENARIO_CLASSES[0]()
+    scenario.setup()
+    supervisor_llm = _ScriptedLLM(
+        [
+            _assistant_message(
+                tool_name="SystemApp__advance_time",
+                tool_args={"minutes": 60},
+            ),
+            _assistant_message(content="Event reconciliation completed."),
+        ]
+    )
+    system = build_building_multi_agent_system(
+        world=scenario.building_runtime.world,
+        runtime=scenario.building_runtime,
+        supervisor_llm=supervisor_llm,
+        room_llm_factory=lambda room_id: _ScriptedLLM(
+            [_assistant_message(content=f"{room_id} reconciled")]
+        ),
+        building_apps=scenario.apps or [],
+        supervisor_toolsets=select_supervisor_toolsets(scenario.apps or []),
+        max_supervisor_tool_calls=5,
+    )
+    engine = Engine(system.supervisor, scenario)
+    system.attach_engine(engine)
+    # This test isolates event-to-room scheduling. Scenario completion is
+    # covered separately by the combined completion-guard tests.
+    system.supervisor.completion_guard = None
+
+    result = system.run_supervisor("Advance until the next event and reconcile it.")
+
+    assert result["status"] == "ok", result
+    assert result["tool_call_count"] == 1
+    assert system.supervisor.auto_dispatch_history
+    assert sum(
+        item["run_count"] for item in system.registry.list_agents()
+    ) >= 1
+    assert system.registry.pending_room_ids() == ()
 
 
 @pytest.mark.parametrize("scenario_class", L3_SCENARIO_CLASSES)

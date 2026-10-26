@@ -100,16 +100,20 @@ class SpecDrivenBuildingL3Scenario(KechuangBuildingScenario):
             world=world,
             runtime=self.building_runtime,
             printing=printing,
+            system=self.get_typed_app(SystemApp),
             operational_end_at=self.spec.end_at,
             target_temperature_c=self.spec.target_temperature_c,
             max_co2_ppm=self.spec.evaluation.max_peak_co2_ppm,
             max_pm25_ug_m3=self.spec.evaluation.max_peak_pm25_ug_m3,
             power_limit_w=self.spec.power_limit_w,
+            max_unoccupied_energy_kwh=self.spec.evaluation.max_unoccupied_energy_kwh,
+            preparation_lead_minutes=self.spec.preparation_lead_minutes,
         )
         self.get_typed_app(SystemApp).register_time_advance_precondition(
             operations.time_advance_precondition
         )
         self.apps.append(operations)
+        operations.bind_device_tools(self.apps)
         lifecycle: list[MeetingPhase] = []
 
         for batch_index, batch in enumerate(self.spec.print_batches, start=1):

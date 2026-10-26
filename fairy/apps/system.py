@@ -1,15 +1,14 @@
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
-from collections.abc import Mapping
-from typing import Annotated, Any, Callable
+from datetime import UTC, datetime, timedelta, timezone
+from typing import Annotated, Any
 
 from fairy.apps.app import App
 from fairy.tool_utils import OperationType, app_tool
 from fairy.types import event_registered
 from fairy.utils.type_utils import type_check
-
 
 # FAIRY's current farm and K1324 fixtures use Harbin/Shanghai civil time.  The
 # epoch timestamp remains timezone-neutral, while tool responses expose both
@@ -41,6 +40,10 @@ class SystemApp(App):
         self._time_advance_preconditions: list[
             Callable[[float], Mapping[str, Any] | None]
         ] = []
+        # Oracle/reference workflows may deliberately replay through events.
+        # Fair live-agent runs opt in to rejecting that bypass for both modes.
+        self.require_guarded_time_advance = False
+        self.guarded_wait_handler: Callable[[int], dict[str, Any]] | None = None
 
     def wait(self, time: int = 0) -> None:
         assert time >= 0, "Time must be non-negative"
@@ -58,7 +61,7 @@ class SystemApp(App):
         explicit "current_datetime_local", and "current_weekday".
         """
         timestamp = self.time_manager.time()
-        utc_date = datetime.fromtimestamp(timestamp, tz=timezone.utc)
+        utc_date = datetime.fromtimestamp(timestamp, tz=UTC)
         local_date = datetime.fromtimestamp(timestamp, tz=FAIRY_LOCAL_TIMEZONE)
         return {
             "current_timestamp": timestamp,
@@ -121,8 +124,22 @@ class SystemApp(App):
         total_seconds = (
             int(seconds) + int(minutes) * 60 + int(hours) * 3600 + int(days) * 86400
         )
+        if total_seconds > 0 and stop_on_event and self.guarded_wait_handler is not None:
+            return self.guarded_wait_handler(total_seconds)
+        return self._advance_seconds(total_seconds, stop_on_event=stop_on_event)
+
+    def _advance_seconds(self, seconds: int, *, stop_on_event: bool = True) -> dict:
+        """Internal guarded clock primitive; never recursively invokes a wait policy."""
+
+        total_seconds = seconds
         if total_seconds <= 0:
             return {"error": "advance_time amount must be > 0"}
+        if not stop_on_event and self.require_guarded_time_advance:
+            return {
+                "status": "rejected",
+                "reason": "unguarded_time_advance_forbidden",
+                "required_action": "Use stop_on_event=true and reconcile interruptions.",
+            }
         requested_target_timestamp = float(self.time_manager.time()) + total_seconds
         # ``stop_on_event=False`` is reserved for deterministic Oracle replay;
         # live Agents keep the default and must satisfy domain reconciliation.
@@ -201,7 +218,7 @@ class SystemApp(App):
             # Preserve the historical return shape for exact replay of old
             # traces. Agents needing civil time should call get_current_time.
             "current_datetime": datetime.fromtimestamp(
-                timestamp, tz=timezone.utc
+                timestamp, tz=UTC
             ).strftime("%Y-%m-%d %H:%M:%S"),
         }
         # Preserve legacy Farm World trace shape when no domain runtime is
@@ -218,7 +235,7 @@ class SystemApp(App):
 
     @app_tool()
     @event_registered(operation_type=OperationType.READ)
-    def wait_for_notification(self, timeout: int = 0) -> None:
+    def wait_for_notification(self, timeout: int = 0) -> dict | None:
         """
         Wait until the next notification or user message is received.
 
@@ -231,6 +248,10 @@ class SystemApp(App):
         """
         timeout = int(timeout)
         assert timeout >= 0, "Timeout must be non-negative"
+        if self.guarded_wait_handler is not None:
+            # Live building waits must not bypass physics, events, or horizon
+            # limits through Engine's legacy notification-clock shortcut.
+            return self.advance_time(seconds=timeout, stop_on_event=True)
         self.wait_for_notification_timeout = WaitForNotificationTimeout(
             timeout=timeout, time_created=self.time_manager.time()
         )

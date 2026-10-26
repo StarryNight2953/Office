@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -23,8 +22,10 @@ def write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary_path = path.with_suffix(path.suffix + ".tmp")
     with open(temporary_path, "w", encoding="utf-8") as f:
-        for row in rows:
-            f.write(json.dumps(row, ensure_ascii=False, default=json_default) + "\n")
+        f.writelines(
+            json.dumps(row, ensure_ascii=False, default=json_default) + "\n"
+            for row in rows
+        )
     temporary_path.replace(path)
 
 
@@ -57,6 +58,48 @@ def metric_totals(metrics: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def merge_metric_totals(
+    primary: dict[str, Any], additional: dict[str, Any] | None
+) -> dict[str, Any]:
+    if not additional:
+        return primary
+    merged = {
+        "llm_call_count": int(primary.get("llm_call_count") or 0)
+        + int(additional.get("llm_call_count") or 0),
+        "tool_metric_count": int(primary.get("tool_metric_count") or 0)
+        + int(additional.get("tool_metric_count") or 0),
+        "llm_wall_time_seconds": round(
+            float(primary.get("llm_wall_time_seconds") or 0)
+            + float(additional.get("llm_wall_time_seconds") or 0),
+            6,
+        ),
+        "tool_wall_time_seconds": round(
+            float(primary.get("tool_wall_time_seconds") or 0)
+            + float(additional.get("tool_wall_time_seconds") or 0),
+            6,
+        ),
+    }
+    primary_tokens = primary.get("token_usage") or {}
+    additional_tokens = additional.get("token_usage") or {}
+    token_usage = {
+        key: int(primary_tokens.get(key) or 0)
+        + int(additional_tokens.get(key) or 0)
+        for key in (
+            "prompt_tokens",
+            "completion_tokens",
+            "total_tokens",
+            "cached_tokens",
+        )
+    }
+    token_usage["source"] = (
+        "llm_runtime_metrics"
+        if token_usage["total_tokens"]
+        else "not_applicable_without_llm"
+    )
+    merged["token_usage"] = token_usage
+    return merged
+
+
 def artifact_guide(artifacts: dict[str, str]) -> dict[str, str]:
     labels = {
         "run_report": "Open this first: status, metrics, outcome, errors, and file guide.",
@@ -67,6 +110,8 @@ def artifact_guide(artifacts: dict[str, str]) -> dict[str, str]:
         "messages": "Raw LLM conversation and tool responses for prompt/debug analysis.",
         "runtime_metrics": "Per LLM/tool timing and token details.",
         "a2a_traces": "A2A expert-agent messages, runtime events, workflow, and token details.",
+        "multi_agent_traces": "Supervisor dispatch, room-Agent traces, and routed Building events.",
+        "multi_agent_state": "Restorable room inbox, lifecycle, counters, traces, and router state.",
         "run_log": "Tool-only replay log kept for compatibility.",
         "evaluation": "Scenario validation result and farm outcome summary.",
         "run_summary": "Legacy machine summary kept for compatibility with older scripts.",
@@ -98,12 +143,15 @@ def build_run_report(
     error: dict[str, Any] | None = None,
     controller_telemetry: dict[str, Any] | None = None,
     a2a: dict[str, Any] | None = None,
+    additional_metric_totals: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    totals = metric_totals(runtime_metrics)
+    totals = merge_metric_totals(
+        metric_totals(runtime_metrics), additional_metric_totals
+    )
     status = "completed" if stopped_reason in {"agent_finished", "completed"} and error is None else "stopped"
     if error is not None:
         status = "failed"
-    if stopped_reason in {"timeout", "timeout_seconds", "max_tool_calls"}:
+    if stopped_reason in {"timeout", "timeout_seconds", "max_tool_calls", "no_progress"}:
         status = "stopped"
     return {
         "schema_version": 1,

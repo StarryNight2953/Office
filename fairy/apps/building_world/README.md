@@ -398,12 +398,13 @@ BuildingWorldRuntime.snapshot()
 
 以下能力不要误认为已经完成：
 
-1. **预约成功不会自动决定何时启动空调**：仍缺 Trigger Policy/Agent 决策；
-2. **灯光、打印机和门禁仅有配置，尚无控制 App**；
-3. **已有 Building Event Queue 和 Trigger Policy，但尚无 Building ARE Controller**；
-4. **真实 MQTT 连接、认证和重连客户端未实现，仅实现消息 Adapter**；
-5. **Agent Builder 尚无 Building 专用 system prompt/family**；
-6. **真实 Provider 缓存尚未纳入 Runtime checkpoint**，纯模拟缓存已支持。
+1. **预约成功不会凭空推断未来控制计划**：只有被 Trigger Policy 标记为 wake-worthy 的已发生事件，才会在总管的下一个模型轮次前自动分派给所属房间 Agent；需要 T-45 准备等行为时，场景仍应显式安排未来事件；
+2. **多智能体仍是显式选择，不是默认行为**：CLI 和 L3 live runner 默认保持旧的单 Agent，Oracle 与 Replay 路径也不变；
+3. **真实 MQTT 连接、认证和重连客户端未实现，仅实现消息 Adapter**；
+4. **checkpoint 已覆盖纯模拟 Runtime 和多智能体控制状态**，但真实 Provider 的外部缓存仍由网关负责；
+5. **CLI 会输出完整多智能体 checkpoint，但尚无 `--resume` 参数**；恢复目前通过 `BuildingMultiAgentSystem.restore()` API 完成；
+6. **取消异步调用不能硬中断已进入线程的同步模型请求**，实际停止依赖单 Agent 的 timeout 和工具预算；
+7. **multi 模式暂不与旧 `--a2a` 叠加**，避免形成两套嵌套委派拓扑。
 
 ## 10. 推荐的下一步整合目标
 
@@ -436,8 +437,11 @@ class BuildingWorldRuntime:
 - 日程取消、设备故障、人工覆盖和环境阈值越界会请求唤醒；
 - Queue、事件分类游标和决策 trace 均包含在 Runtime checkpoint 中。
 
-下一阶段由 `BuildingAREController` 消费 `RuntimeAdvanceResult.trigger_decisions`，
-构造 Agent 上下文并执行 Tool Calls。Trigger Policy 不应直接依赖或调用 LLM。
+当前 opt-in 控制层由 `RoomEventRouter` 消费分类后的 event/decision 对，
+只把 `should_wake_agent=True` 的事件投入对应房间 inbox。Trigger Policy 和
+Runtime 不直接依赖或调用 LLM；`BuildingSupervisorAgent` 会在每个总管 LLM
+轮次之前检查新增 inbox，并以有界并发自动运行涉及的房间 Agent。这样 Runtime
+时间推进仍保持确定性，模型失败也不会发生在物理推进调用栈中。
 
 届时 Conference 场景的数据流应是：
 
@@ -453,6 +457,146 @@ SCHEDULE_CREATED
   -> 关闭设备并释放资源
 ```
 
+### 10.1 多智能体 MVP
+
+多智能体实现位于：
+
+- `fairy/controllers/building/room_agents.py`
+  - `RoomContextApp`：只暴露一个房间的状态和已发生事件；
+  - `RoomScopedToolset`：代理既有 App Tool，并在调用前校验 room/zone/device/meeting 归属；
+  - `RoomAgentRegistry`：按房间注册、延迟创建 Agent，维护有界 inbox、预算和 trace。
+- `fairy/controllers/building/multi_agent.py`
+  - `RoomAgentManagerApp`：供总管执行 list/status/inbox/delegate/broadcast/enable/reset；
+  - `RoomEventRouter`：把 wake-worthy 事件定向投递到房间 inbox；
+  - `BuildingMultiAgentSystem`：装配总管、房间 Registry、Manager 和 Router。
+
+在现有 Building Scenario 中启用：
+
+```python
+from fairy.controllers.building import build_building_multi_agent_system
+from fairy.controllers.engine import Engine
+
+scenario.setup()
+
+multi_agent = build_building_multi_agent_system(
+    world=scenario.building_runtime.world,
+    runtime=scenario.building_runtime,
+    supervisor_llm=create_supervisor_llm(),
+    # 每个房间应获得独立 client/配置；client 可以指向同一个模型服务。
+    room_llm_factory=lambda room_id: create_room_llm(room_id),
+    building_apps=scenario.apps or [],
+    # 最多同时运行 3 个不同房间 Agent；其余任务在调度器内排队。
+    max_parallel_room_agents=3,
+)
+engine = Engine(agent=multi_agent.supervisor, scenario=scenario)
+multi_agent.attach_engine(engine)
+
+workflow = engine.run_scenario_agent(
+    max_tool_calls=180,
+    timeout_seconds=1800,
+    setup_scenario=False,
+)
+```
+
+CLI 可按次选择运行方式；不传该参数时仍为 `single`：
+
+```bash
+# 原单 Agent 路径（默认）
+python -m fairy.cli --agent --scenario <scenario_id> \
+  --controller building_baseline_react --building-agent-mode single
+
+# 总管 + 每房间一个 Agent
+python -m fairy.cli --agent --scenario <scenario_id> \
+  --controller building_baseline_react --building-agent-mode multi \
+  --max-parallel-room-agents 4 \
+  --room-max-tool-calls 40 \
+  --room-timeout-seconds 300
+```
+
+multi 模式额外输出 `<scenario>.multi_agent_traces.json` 和
+`<scenario>.multi_agent_state.json`。前者用于审计路由、自动分派和房间运行，后者是
+JSON 可序列化 checkpoint，包含 Runtime、房间 inbox/启停状态、累计指标、有限
+trace 和路由状态：
+
+```python
+checkpoint = multi_agent.snapshot()
+# 在按相同配置重新构建 system 后：
+restored_multi_agent.restore(checkpoint)
+```
+
+模型连接、线程锁和完整聊天上下文不会写入 checkpoint；恢复后的房间 Agent 会在
+第一次新委派时惰性创建，并使用当前公开房间快照与待处理事件继续工作。
+新任务不再把上一次自由文本回答当作已验证状态。
+
+v3 公平成对实验已接入结构化房间目标校验、自动有界等待、营业结束时间限制和
+收尾无进展检测。完整修复说明、证据范围及手动运行命令见
+[v3 修复与复测说明](../../../reports/building_l3_fair_ab_v3_01/implementation.zh.md)。
+
+v4 进一步保留 reset 前的累计用量和运行账本，对明确设备合同自动结束，并返回
+`blocked/deferred` 策略结果；还包含保守空房事件过滤和两种公平模式共用的平台期
+监控退避。当前运行命令与合同范围见
+[v4 修复与复测说明](../../../reports/building_l3_fair_ab_v4_01/implementation.zh.md)。
+
+L3 批量实测建议从仓库根目录用模块方式启动，避免脚本路径启动时找不到 `fairy`：
+
+```powershell
+python -m scripts.building_l3_live_runner --stage repair `
+  --building-agent-mode multi --max-tool-calls 500 `
+  --room-max-tool-calls 80 --room-timeout-seconds 300 `
+  --max-prompt-chars 100000 --max-repeated-identical-calls 6 `
+  --timeout-seconds 3600 --output-root runs/building_l3_multi_repair_next
+```
+
+`--max-tool-calls` 限制单 Agent 或 Supervisor；房间 Agent 独立受
+`--room-max-tool-calls` 限制。长运行只裁剪发送给模型的上下文，完整消息与工具记录
+仍保留在产物中。相同仿真时刻的重复无进展调用达到阈值时会以 `no_progress`
+停止。`get_operational_status.can_finish` 只表示运营收尾完成，
+`quality_alerts` 会提示已无法挽回的取消或打印逾期；最终仍以场景 validation 为准。
+排查时可用 `--scenario-numbers 3,14,16` 只跑指定场景；它会覆盖 `--stage`。
+
+`broadcast_to_rooms` 供 Supervisor 的同步 function-calling 使用，但内部已经通过
+有界线程池并行运行不同房间。异步 Python 服务可以直接使用非阻塞 API：
+
+```python
+async def inspect_rooms(multi_agent):
+    return await multi_agent.manager.broadcast_to_rooms_async(
+        ["k1324", "k1316", "k1315"],
+        "检查本房间状态并处理紧急事件。",
+    )
+
+# 如果整个 Supervisor 调用也不能阻塞当前 event loop：
+result = await multi_agent.run_supervisor_async(
+    "并行检查三个房间，并汇总每个房间的结果。"
+)
+```
+
+并发语义：
+
+- 不同房间 Agent 的模型调用会并行执行，并受 `max_parallel_room_agents` 限制；
+- 同一房间的多个委派自动排队，避免同时修改同一个 Agent 的 messages/workflow；
+- 广播结果始终按输入房间顺序返回，重复 room ID 只执行一次；
+- 单房间失败只形成该房间的失败结果，不会取消其他房间；
+- 共享 `BuildingWorldApp` 的实际工具操作使用短时互斥锁，保证事件 ID 和状态写入一致；模型推理与等待仍可并行；
+- 取消异步等待不会强制终止已经在线程中运行的同步模型请求，实际停止仍由 Agent 的 `timeout_seconds` 和工具预算控制。
+
+默认安全边界：
+
+- 房间 Agent 只看到自己的过滤快照和 wake-worthy inbox；
+- 房间 Tool 使用 allowlist，且无可解析 room scope 的调用默认拒绝；
+- 跨房间选择、资源冲突和优先级决策留在总管；
+- Runtime listener 失败只记入 trace，不中断事件队列或物理推进；
+- 每次委派重置模型 messages，但保留有限 inbox、最近结果和有界 run trace；
+- 事件投递本身不会调用模型；总管在下一个 LLM 轮次前进行有界自动分派；
+- 场景完成守卫会同时检查原有业务阻塞项与未确认的房间事件，避免提前结束。
+
+当前 MVP 限制：
+
+- 未知归属的全局事件只记录为 unrouted，不会默认广播；
+- checkpoint 恢复已有 API，但 CLI 尚未提供从 checkpoint 继续运行的参数；
+- 已有 20 场景真实模型运行记录；本轮保护改动尚需重新执行配对实测才能评价效果；
+- 取消异步等待不会硬终止已在线程中运行的同步模型请求；
+- `--building-agent-mode multi` 与旧 `--a2a` 当前互斥。
+
 ## 11. 测试对应关系
 
 | 测试文件 | 覆盖范围 |
@@ -460,6 +604,7 @@ SCHEDULE_CREATED
 | `test_building_indoor_environment_engine.py` | 热湿、CO₂、PM2.5、能耗、阈值和快照 |
 | `test_building_sensor_integration.py` | MQTT 映射、真实/模拟优先级、Agent 真值隔离 |
 | `test_building_meeting_booking.py` | 预约、冲突、容量、能力、事件、快照和 Replay |
+| `test_building_multi_agent.py` | 房间隔离、跨房拒绝、懒加载、预算、事件路由、故障隔离、总管委派、自动消费、组合完成守卫、异步并行、同房串行、累计指标和 checkpoint 恢复 |
 
 修改某一层时，应优先运行对应测试，再运行 FAIRY migration smoke test，确认 Farm
 场景没有受到 Building 扩展影响。
@@ -475,3 +620,18 @@ SCHEDULE_CREATED
 - 所有 replay ID 必须确定性生成；
 - 资源冲突和安全规则必须由确定性代码执行；
 - 模拟与真实设备通过 Adapter 边界替换，上层场景不依赖厂商 SDK。
+
+## 13. v5 公平实跑：明确计划与有限继续等待
+
+新增共享的设备目标可实现性校验和受保护批量执行：
+`BuildingOperationsApp.apply_device_plan` / `apply_room_plans` 向单、多模式对称开放。
+明确的房间合同可不调用房间模型，由控制器通过原有 scoped tools 执行，保留工具预算、逐动作日志和状态验证。
+同房间兼容目标可合并；错误模式或冲突在执行前拒绝；正在进行的会议不能误关必需设备。
+
+`apply_room_plans` 可包含一次 0..60 分钟的批准等候，仅在全部目标先验证成功后开始。
+等候中只有可证明已处理的常规事件能继续；重大事件、环境告警、就绪/功率等守卫和时间边界仍中断。
+这不是自由后台执行，也不代表设备状态已经产生所需物理效果。
+
+新增 `*.device_plan_actions.json` 保留批内实际动作。报告分别列出外层/房间工具数与批内动作数，不能把它们简单相加。
+完整边界、验证记录及手动配对命令见
+[v5 实现说明](../../../reports/building_l3_fair_ab_v5_01/implementation.zh.md)。
