@@ -26,6 +26,10 @@ build/
 dist/
 *.egg-info/
 
+# Frontend dependencies and incremental compiler output
+node_modules/
+*.tsbuildinfo
+
 # Local credentials. Commit a sanitized .env.example when needed.
 .env
 .env.*
@@ -33,6 +37,7 @@ dist/
 
 # FAIRY-generated run, workflow and evaluation artifacts
 runs/
+.office/
 fos_exports/
 workflow_exports/
 *.log
