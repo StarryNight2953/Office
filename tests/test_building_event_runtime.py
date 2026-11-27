@@ -1,25 +1,25 @@
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from fairy.apps.building_world import (
+from smartoffice.apps.building_world import (
     BuildingEvent,
     BuildingEventType,
     DeviceHealth,
 )
-from fairy.apps.building_world.room_loader import load_room_configuration
-from fairy.apps.building_world.runtime import (
+from smartoffice.apps.building_world.room_loader import load_room_configuration
+from smartoffice.apps.building_world.runtime import (
     BuildingWorldRuntime,
     constant_outdoor_provider,
 )
-from fairy.controllers.building import (
+from smartoffice.controllers.building import (
     BuildingEventQueue,
     BuildingTriggerPolicy,
 )
-from fairy.physics.building import OutdoorConditions
+from smartoffice.physics.building import OutdoorConditions
 
 
 CONFIG_PATH = (
-    Path(__file__).parents[1] / "fairy" / "configs" / "rooms" / "k1324.yaml"
+    Path(__file__).parents[1] / "smartoffice" / "configs" / "rooms" / "k1324.yaml"
 )
 START_AT = datetime(2026, 9, 10, 5, 0, tzinfo=timezone.utc)
 

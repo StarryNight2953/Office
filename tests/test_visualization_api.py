@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from fairy.visualization.server import create_app
+from smartoffice.visualization.server import create_app
 
 
 class ApiTests(unittest.TestCase):

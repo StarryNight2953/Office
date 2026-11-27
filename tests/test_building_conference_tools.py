@@ -1,26 +1,26 @@
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fairy.apps.building_world import (
+from smartoffice.apps.building_world import (
     BuildingEventType,
     LightingApp,
     MeetingEquipmentApp,
     PrintingApp,
     VentilationApp,
 )
-from fairy.apps.building_world.room_loader import load_room_configuration
-from fairy.apps.building_world.runtime import (
+from smartoffice.apps.building_world.room_loader import load_room_configuration
+from smartoffice.apps.building_world.runtime import (
     BuildingWorldRuntime,
     constant_outdoor_provider,
 )
-from fairy.apps.system import SystemApp
-from fairy.controllers.engine import Engine
-from fairy.physics.building import OutdoorConditions
-from fairy.scenarios.building_kechuang.k1315.scenario_conference_standard import (
+from smartoffice.apps.system import SystemApp
+from smartoffice.controllers.engine import Engine
+from smartoffice.physics.building import OutdoorConditions
+from smartoffice.scenarios.building_kechuang.k1315.scenario_conference_standard import (
     ScenarioBuildingKechuangK1315ConferenceStandard,
 )
 
-CONFIG_PATH = Path(__file__).parents[1] / "fairy" / "configs" / "rooms" / "k1315.yaml"
+CONFIG_PATH = Path(__file__).parents[1] / "smartoffice" / "configs" / "rooms" / "k1315.yaml"
 ZONE_ID = "k1315_conference_zone"
 
 

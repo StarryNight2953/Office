@@ -4,16 +4,16 @@ from datetime import timedelta
 
 import pytest
 
-from fairy.apps.building_world import BuildingOperationsApp
-from fairy.apps.building_world.device_plans import canonical_goals
-from fairy.apps.building_world.types import BuildingEventType
-from fairy.controllers.building.multi_agent import (
+from smartoffice.apps.building_world import BuildingOperationsApp
+from smartoffice.apps.building_world.device_plans import canonical_goals
+from smartoffice.apps.building_world.types import BuildingEventType
+from smartoffice.controllers.building.multi_agent import (
     BuildingMultiAgentSystem,
     RoomAgentManagerApp,
 )
-from fairy.controllers.building.room_agents import RoomAgentRegistry
-from fairy.controllers.engine import Engine
-from fairy.scenarios.building_kechuang.l3.scenarios import L3_SCENARIO_CLASSES
+from smartoffice.controllers.building.room_agents import RoomAgentRegistry
+from smartoffice.controllers.engine import Engine
+from smartoffice.scenarios.building_kechuang.l3.scenarios import L3_SCENARIO_CLASSES
 
 
 class _NoModel:
@@ -493,8 +493,8 @@ def test_cli_fair_mode_exports_primitive_action_audit_without_model(
     import json
     import sys
 
-    from fairy import cli
-    from fairy.agents.llm.base_llm import BaseLLM
+    from smartoffice import cli
+    from smartoffice.agents.llm.base_llm import BaseLLM
 
     model = _NoModel()
     monkeypatch.setattr(BaseLLM, "llm_builder", lambda _: model)
@@ -514,7 +514,7 @@ def test_cli_fair_mode_exports_primitive_action_audit_without_model(
         sys,
         "argv",
         [
-            "fairy.cli",
+            "smartoffice.cli",
             "--scenario",
             scenario_id,
             "--agent",

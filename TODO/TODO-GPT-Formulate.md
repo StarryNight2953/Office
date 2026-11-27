@@ -16,7 +16,7 @@
 - 带噪声、偏差、延迟、缺失和质量码的 Observation Model；
 - 分钟级物理推进、Event Queue、Trigger Policy、snapshot/restore 和 trace；
 - Building 专用 system prompt 与 `building_baseline_react`；
-- `fairy/scenarios/building_kechuang/` 下四个可运行、可回放、可验证场景；
+- `smartoffice/scenarios/building_kechuang/` 下四个可运行、可回放、可验证场景；
 - MQTT Publisher、Subscriber、Adapter、SensorHub 和物理传感器模拟器；
 - Building 与 FAIRY 迁移回归测试。
 
@@ -50,7 +50,7 @@ BACnet/Modbus 接入。
 ## 1. 目标代码结构
 
 ```text
-fairy/
+smartoffice/
 ├── apps/
 │   └── building_world/
 │       ├── __init__.py
@@ -118,7 +118,7 @@ fairy/
 
 ## 2. 建筑领域类型与状态模型
 
-- [ ] 在 `fairy/apps/building_world/types.py` 定义 `RoomStaticSpec`。
+- [ ] 在 `smartoffice/apps/building_world/types.py` 定义 `RoomStaticSpec`。
 - [x] 定义 `RoomDynamicState`；环境隐藏真值继续由 Physics `ZoneState` 持有。
 - [x] 定义 `ZoneSpec`，支持会议区、办公区、出入口等空间分区。
 - [x] 定义 `PersonState`、`PersonRole` 和人员当前位置。
@@ -127,7 +127,7 @@ fairy/
 - [ ] 定义 `ScheduleEntry` 和 `MeetingState`。
 - [ ] 定义 `BuildingAction`、`ActionResult` 和 `ActionEffect`。（前两项已完成）
 - [x] 定义统一 `BuildingEvent`：事件 ID、时间、类型、来源、payload、父事件和因果链。
-- [ ] 在 `fairy/types.py` 中只增加必要的跨领域事件接口，避免建筑类型污染全局类型系统。
+- [ ] 在 `smartoffice/types.py` 中只增加必要的跨领域事件接口，避免建筑类型污染全局类型系统。
 
 ### 必需人员角色
 

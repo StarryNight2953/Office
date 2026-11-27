@@ -8,20 +8,20 @@ from types import SimpleNamespace
 
 import pytest
 
-from fairy.agents.agent.toolset_builder import build_toolset
-from fairy.apps.building_world import (
+from smartoffice.agents.agent.toolset_builder import build_toolset
+from smartoffice.apps.building_world import (
     BuildingOperationsApp,
     DeviceRegistryApp,
     HvacApp,
     VentilationApp,
 )
-from fairy.apps.building_world.room_loader import load_room_configuration
-from fairy.apps.building_world.runtime import (
+from smartoffice.apps.building_world.room_loader import load_room_configuration
+from smartoffice.apps.building_world.runtime import (
     BuildingWorldRuntime,
     constant_outdoor_provider,
 )
-from fairy.apps.building_world.types import BuildingEventType, MeetingStatus
-from fairy.controllers.building import (
+from smartoffice.apps.building_world.types import BuildingEventType, MeetingStatus
+from smartoffice.controllers.building import (
     DEFAULT_ROOM_TOOL_NAMES,
     RoomAgentManagerApp,
     RoomAgentRegistry,
@@ -31,13 +31,13 @@ from fairy.controllers.building import (
     RoomScopeViolation,
     build_building_multi_agent_system,
 )
-from fairy.controllers.building.trigger_policy import TriggerDecision
-from fairy.controllers.engine import Engine
-from fairy.physics.building import OutdoorConditions
-from fairy.scenarios.building_kechuang.l3.scenarios import L3_SCENARIO_CLASSES
-from fairy.tool_utils import _json_schema
+from smartoffice.controllers.building.trigger_policy import TriggerDecision
+from smartoffice.controllers.engine import Engine
+from smartoffice.physics.building import OutdoorConditions
+from smartoffice.scenarios.building_kechuang.l3.scenarios import L3_SCENARIO_CLASSES
+from smartoffice.tool_utils import _json_schema
 
-CONFIG_DIR = Path(__file__).parents[1] / "fairy" / "configs" / "rooms"
+CONFIG_DIR = Path(__file__).parents[1] / "smartoffice" / "configs" / "rooms"
 START_AT = datetime(2026, 9, 10, 5, 0, tzinfo=UTC)
 
 

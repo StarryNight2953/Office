@@ -7,8 +7,8 @@ import unittest
 from datetime import datetime
 from unittest.mock import patch
 
-from fairy.controllers.engine import Engine
-from fairy.scenarios.building_kechuang.l3.scenarios import L3_SCENARIO_CLASSES
+from smartoffice.controllers.engine import Engine
+from smartoffice.scenarios.building_kechuang.l3.scenarios import L3_SCENARIO_CLASSES
 from scripts.diagnose_building_l3_to_l1 import (
     analyze_source, print_verdict, probe_printing,
 )

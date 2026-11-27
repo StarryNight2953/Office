@@ -12,7 +12,7 @@
 python -m pip install -r requirements-visualization.txt
 npm --prefix web install
 npm --prefix web run build
-python -m fairy.visualization
+python -m smartoffice.visualization
 ```
 
 打开 **http://127.0.0.1:8000**。后端同时提供构建后的网页、模型资产和 API；API 文档位于 `/docs`。服务默认仅监听本机，是单进程、单用户、单活动实验的工作台。
@@ -21,7 +21,7 @@ python -m fairy.visualization
 
 ```bash
 # 终端一，在项目根目录
-python -m fairy.visualization
+python -m smartoffice.visualization
 
 # 终端二，在项目根目录
 npm --prefix web run dev
@@ -50,7 +50,7 @@ npm --prefix web run dev
 export OFFICE_LLM_MODEL="your-model-name"
 export OFFICE_LLM_BASE_URL="https://your-provider.example/v1"
 # 按你的本地密钥管理方式设置 OFFICE_LLM_API_KEY，或使用已有 OPENAI_API_KEY。
-python -m fairy.visualization
+python -m smartoffice.visualization
 ```
 
 `OFFICE_LLM_BASE_URL` 可省略以使用 OpenAI 默认端点。这里复用仓库的 `OpenAICompatibleClient`，模型需支持工具调用。安装了 OpenAI SDK 且模型名、密钥已配置时，网页启用“运行 Agent”。
@@ -67,7 +67,7 @@ Agent 通过现有的设备查询、灯光、空调、传感器和时间工具�
 
 | 数据 | 保存位置 / 所有者 |
 |---|---|
-| 已有设备、额定功率、房间物理参数 | 原 `fairy/configs/rooms/` 配置 |
+| 已有设备、额定功率、房间物理参数 | 原 `smartoffice/configs/rooms/` 配置 |
 | 视觉布局、GLB 引用、设备绑定、初始命令 | `.office/scenes/<room_id>.json` |
 | 当前设备状态 | 本次 Runner 内的 `BuildingWorldApp` |
 | 环境演化与观测 | 现有 Building Runtime、Physics、SensorHub |

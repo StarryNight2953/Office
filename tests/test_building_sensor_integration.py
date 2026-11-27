@@ -2,17 +2,17 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from fairy.adapters.building import (
+from smartoffice.adapters.building import (
     MqttSensorAdapter,
     SensorPointMapping,
     SimulatedSensorAdapter,
 )
-from fairy.apps.building_world import (
+from smartoffice.apps.building_world import (
     BuildingSensorApp,
     SensorHub,
     SensorShadowEvaluator,
 )
-from fairy.physics.building import (
+from smartoffice.physics.building import (
     BuildingObservationModel,
     BuildingPhysicsOrchestrator,
     IndoorEnvironmentEngine,

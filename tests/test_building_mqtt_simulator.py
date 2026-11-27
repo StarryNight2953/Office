@@ -10,29 +10,29 @@ from typing import Any
 
 import pytest
 
-from fairy.adapters.building import (
+from smartoffice.adapters.building import (
     MqttConnectionSettings,
     MqttSensorAdapter,
     MqttSensorPublisher,
     MqttSensorSubscriber,
 )
-from fairy.apps.building_world.room_loader import load_room_configuration
-from fairy.apps.building_world.sensor_hub import SensorHub
-from fairy.physics.building import (
+from smartoffice.apps.building_world.room_loader import load_room_configuration
+from smartoffice.apps.building_world.sensor_hub import SensorHub
+from smartoffice.physics.building import (
     SensorQuality,
     SensorQuantity,
     SensorReading,
     SensorReadRequest,
 )
-from fairy.simulators.building import (
+from smartoffice.simulators.building import (
     BuildingMqttSensorSimulator,
     build_sensor_point_mappings,
     build_sensor_topics,
 )
-from fairy.simulators.building.mqtt_sensor_simulator import create_runtime
+from smartoffice.simulators.building.mqtt_sensor_simulator import create_runtime
 
 NOW = datetime(2026, 8, 17, 12, 0, tzinfo=timezone.utc)
-ROOM_CONFIG_DIRECTORY = Path(__file__).parents[1] / "fairy" / "configs" / "rooms"
+ROOM_CONFIG_DIRECTORY = Path(__file__).parents[1] / "smartoffice" / "configs" / "rooms"
 
 
 class FakeMqttClient:
@@ -211,7 +211,7 @@ def test_live_broker_round_trip_reaches_sensor_hub() -> None:
         MqttConnectionSettings(
             host="127.0.0.1",
             port=port,
-            client_id="fairy-test-subscriber",
+            client_id="smartoffice-test-subscriber",
         ),
         adapter,
     )
@@ -219,7 +219,7 @@ def test_live_broker_round_trip_reaches_sensor_hub() -> None:
         MqttConnectionSettings(
             host="127.0.0.1",
             port=port,
-            client_id="fairy-test-publisher",
+            client_id="smartoffice-test-publisher",
         ),
         topics,
     )

@@ -4,31 +4,31 @@ from pathlib import Path
 
 import pytest
 
-from fairy.adapters.building import MqttSensorAdapter, SensorPointMapping
-from fairy.apps.building_world import (
+from smartoffice.adapters.building import MqttSensorAdapter, SensorPointMapping
+from smartoffice.apps.building_world import (
     AirDeviceApp,
     BuildingEventType,
     HvacApp,
     OccupancyApp,
 )
-from fairy.apps.building_world.room_loader import load_room_configuration
-from fairy.apps.building_world.runtime import (
+from smartoffice.apps.building_world.room_loader import load_room_configuration
+from smartoffice.apps.building_world.runtime import (
     BuildingWorldRuntime,
     constant_outdoor_provider,
 )
-from fairy.apps.building_world.sensor_app import BuildingSensorApp
-from fairy.apps.system import SystemApp
-from fairy.controllers.engine import Engine
-from fairy.physics.building import (
+from smartoffice.apps.building_world.sensor_app import BuildingSensorApp
+from smartoffice.apps.system import SystemApp
+from smartoffice.controllers.engine import Engine
+from smartoffice.physics.building import (
     OutdoorConditions,
     SensorQuantity,
     SensorReadRequest,
 )
-from fairy.scenarios.building_kechuang.scenario_room_booking import (
+from smartoffice.scenarios.building_kechuang.scenario_room_booking import (
     ScenarioBuildingKechuangRoomBooking,
 )
 
-CONFIG_PATH = Path(__file__).parents[1] / "fairy" / "configs" / "rooms" / "k1324.yaml"
+CONFIG_PATH = Path(__file__).parents[1] / "smartoffice" / "configs" / "rooms" / "k1324.yaml"
 START_AT = datetime(2026, 9, 10, 5, 0, tzinfo=timezone.utc)
 ZONE_ID = "k1324_office_zone"
 

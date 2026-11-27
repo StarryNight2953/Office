@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fairy.cli import main
+from smartoffice.cli import main
 
 
 if __name__ == "__main__":

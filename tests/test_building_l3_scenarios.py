@@ -5,22 +5,22 @@ from types import SimpleNamespace
 
 import pytest
 
-from fairy.agents.agent.toolset_builder import build_toolset
-from fairy.apps.building_world import (
+from smartoffice.agents.agent.toolset_builder import build_toolset
+from smartoffice.apps.building_world import (
     BuildingSensorApp,
     BuildingWorldApp,
     PrintingApp,
 )
-from fairy.apps.system import SystemApp
-from fairy.controllers.building import (
+from smartoffice.apps.system import SystemApp
+from smartoffice.controllers.building import (
     RoomScopedToolset,
     build_building_multi_agent_system,
     select_supervisor_toolsets,
 )
-from fairy.controllers.engine import Engine
-from fairy.scenarios.building_kechuang.l3.catalog import L3_SPECS
-from fairy.scenarios.building_kechuang.l3.scenarios import L3_SCENARIO_CLASSES
-from fairy.scenarios.registry import get_scenario_class, list_scenarios
+from smartoffice.controllers.engine import Engine
+from smartoffice.scenarios.building_kechuang.l3.catalog import L3_SPECS
+from smartoffice.scenarios.building_kechuang.l3.scenarios import L3_SCENARIO_CLASSES
+from smartoffice.scenarios.registry import get_scenario_class, list_scenarios
 
 
 class _ScriptedLLM:

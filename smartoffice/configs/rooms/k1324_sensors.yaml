@@ -1,0 +1,40 @@
+# Example point mapping. Replace addresses and sensor IDs with K1324 inventory.
+room_id: k1324
+run_mode: shadow
+
+# Deployment rationale and optional HVAC-side points:
+# smartoffice/configs/rooms/k1324_sensor_selection.md
+
+providers:
+  - name: k1324_mqtt
+    type: mqtt
+    priority: 100  # Real observations override simulated readings in merged view.
+
+sensors:
+  - point_address: k13/k1324/environment/temperature
+    sensor_id: k1324_temp_01
+    zone_id: k1324_office_zone
+    quantity: air_temperature_c
+    source_unit: degC
+    canonical_unit: degC
+
+  - point_address: k13/k1324/environment/humidity
+    sensor_id: k1324_rh_01
+    zone_id: k1324_office_zone
+    quantity: relative_humidity_pct
+    source_unit: "%RH"
+    canonical_unit: "%RH"
+
+  - point_address: k13/k1324/environment/co2
+    sensor_id: k1324_co2_01
+    zone_id: k1324_office_zone
+    quantity: co2_ppm
+    source_unit: ppm
+    canonical_unit: ppm
+
+  - point_address: k13/k1324/environment/pm25
+    sensor_id: k1324_pm25_01
+    zone_id: k1324_office_zone
+    quantity: pm25_ug_m3
+    source_unit: ug/m3
+    canonical_unit: ug/m3

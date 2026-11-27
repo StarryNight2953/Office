@@ -2,24 +2,24 @@
 
 from types import SimpleNamespace
 
-from fairy.agents.agent.agent import Agent
-from fairy.apps.building_world import (
+from smartoffice.agents.agent.agent import Agent
+from smartoffice.apps.building_world import (
     BuildingOperationsApp,
     BuildingWorldApp,
     VentilationApp,
 )
-from fairy.apps.building_world.types import DeviceType
-from fairy.controllers.building.fair_eval import install_single_agent_room_preflight
-from fairy.controllers.building.room_agents import RoomScopedToolset
-from fairy.controllers.engine import Engine
-from fairy.scenarios.building_kechuang.l3.scenarios import L3_SCENARIO_CLASSES
-from fairy.time_manager import TimeManager
+from smartoffice.apps.building_world.types import DeviceType
+from smartoffice.controllers.building.fair_eval import install_single_agent_room_preflight
+from smartoffice.controllers.building.room_agents import RoomScopedToolset
+from smartoffice.controllers.engine import Engine
+from smartoffice.scenarios.building_kechuang.l3.scenarios import L3_SCENARIO_CLASSES
+from smartoffice.time_manager import TimeManager
 
 
 def test_explicit_clock_ignores_wall_latency_but_honors_advance(monkeypatch) -> None:
     clock = TimeManager(include_wall_time=False)
     clock.reset(start_time=1_000.0)
-    monkeypatch.setattr("fairy.time_manager.time.time", lambda: 9_999.0)
+    monkeypatch.setattr("smartoffice.time_manager.time.time", lambda: 9_999.0)
 
     assert clock.time() == 1_000.0
     clock.add_offset(300.0)

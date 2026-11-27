@@ -9,9 +9,9 @@ from __future__ import annotations
 import copy
 from datetime import datetime
 
-from fairy.apps.building_world import BuildingWorldApp, PrintingApp
-from fairy.scenarios.building_kechuang.l3.scenarios import L3_SCENARIO_CLASSES
-from fairy.scenarios.building_kechuang.l3.specs import ZONE_IDS
+from smartoffice.apps.building_world import BuildingWorldApp, PrintingApp
+from smartoffice.scenarios.building_kechuang.l3.scenarios import L3_SCENARIO_CLASSES
+from smartoffice.scenarios.building_kechuang.l3.specs import ZONE_IDS
 from scripts.diagnose_building_l3_to_l1 import fresh_engine, invoke
 
 
@@ -144,7 +144,7 @@ def probe_device_candidate(scenario_class, report, steps, candidate):
 
 
 def probe_booking():
-    from fairy.scenarios.building_kechuang.scenario_room_booking import (
+    from smartoffice.scenarios.building_kechuang.scenario_room_booking import (
         END_AT, START_AT, ScenarioBuildingKechuangRoomBooking,
     )
     engine, tools = fresh_engine(ScenarioBuildingKechuangRoomBooking)

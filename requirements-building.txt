@@ -1,5 +1,4 @@
-# FAIRY Building runtime and repository import compatibility.
-numpy>=1.26,<3
+# Smart-building runtime and model clients.
 # FAIRY's compatible-provider clients are currently validated against the
 # OpenAI Python 1.x constructor semantics.
 openai>=1.40,<2

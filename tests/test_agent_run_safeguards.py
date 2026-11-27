@@ -7,8 +7,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from fairy.agents.agent.agent import Agent, AgentRunLimitExceeded
-from fairy.time_manager import TimeManager
+from smartoffice.agents.agent.agent import Agent, AgentRunLimitExceeded
+from smartoffice.time_manager import TimeManager
 
 
 def _agent() -> Agent:

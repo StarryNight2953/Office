@@ -7,11 +7,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from fairy.apps.building_world import BuildingOperationsApp
-from fairy.apps.building_world.types import BuildingEventType
-from fairy.controllers.building.room_agents import RoomAgentRegistry
-from fairy.controllers.engine import Engine
-from fairy.scenarios.building_kechuang.l3.scenarios import L3_SCENARIO_CLASSES
+from smartoffice.apps.building_world import BuildingOperationsApp
+from smartoffice.apps.building_world.types import BuildingEventType
+from smartoffice.controllers.building.room_agents import RoomAgentRegistry
+from smartoffice.controllers.engine import Engine
+from smartoffice.scenarios.building_kechuang.l3.scenarios import L3_SCENARIO_CLASSES
 
 
 class _LLM:

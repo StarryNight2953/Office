@@ -15,18 +15,18 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from fairy.controllers.engine import Engine
-from fairy.scenarios.building_kechuang.l1.manifest import (
+from smartoffice.controllers.engine import Engine
+from smartoffice.scenarios.building_kechuang.l1.manifest import (
     MANIFEST_PATH,
     ManifestError,
     accepted_contracts,
     load_manifest,
     validate_source_links,
 )
-from fairy.scenarios.registry import get_scenario_class
+from smartoffice.scenarios.registry import get_scenario_class
 
 DEFAULT_OUTPUT_DIR = (
-    ROOT / "fairy" / "scenarios" / "building_kechuang" / "l1" / "generated"
+    ROOT / "smartoffice" / "scenarios" / "building_kechuang" / "l1" / "generated"
 )
 L3_SELECTOR = re.compile(r"^L3-(\d{1,2})$", re.IGNORECASE)
 GENERATED_MARKER = '"""Generated from l1/manifest.json; do not edit this module directly."""'
@@ -37,12 +37,12 @@ def render_contract(contract: dict[str, Any]) -> str:
     class_name = contract["class_name"]
     return f'''"""Generated from l1/manifest.json; do not edit this module directly."""
 
-from fairy.scenarios.building_kechuang.l1.base import (
+from smartoffice.scenarios.building_kechuang.l1.base import (
     ManifestDrivenBuildingL1Scenario,
     contract_timestamp,
 )
-from fairy.scenarios.building_kechuang.l1.manifest import load_contract
-from fairy.scenarios.registry import register_scenario
+from smartoffice.scenarios.building_kechuang.l1.manifest import load_contract
+from smartoffice.scenarios.registry import register_scenario
 
 CONTRACT = load_contract("{scenario_id}")
 
@@ -219,7 +219,7 @@ def validate_generated(
     for contract in contracts:
         scenario_id = contract["scenario_id"]
         importlib.import_module(
-            "fairy.scenarios.building_kechuang.l1.generated." + scenario_id
+            "smartoffice.scenarios.building_kechuang.l1.generated." + scenario_id
         )
         scenario_class = get_scenario_class(scenario_id)
         if scenario_class.__name__ != contract["class_name"]:

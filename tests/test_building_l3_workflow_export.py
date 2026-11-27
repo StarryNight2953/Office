@@ -2,7 +2,7 @@
 
 import json
 
-from fairy.scenarios.building_kechuang.export_l3_workflows import (
+from smartoffice.scenarios.building_kechuang.export_l3_workflows import (
     export_l3_workflows,
 )
 

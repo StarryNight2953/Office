@@ -1,21 +1,21 @@
 import pytest
 
-from fairy.apps.building_world import BuildingEventType
-from fairy.controllers.engine import Engine
-from fairy.scenarios.building_kechuang.k1315.scenario_conference_standard import (
+from smartoffice.apps.building_world import BuildingEventType
+from smartoffice.controllers.engine import Engine
+from smartoffice.scenarios.building_kechuang.k1315.scenario_conference_standard import (
     ScenarioBuildingKechuangK1315ConferenceStandard,
 )
-from fairy.scenarios.building_kechuang.k1316.scenario_seminar_standard import (
+from smartoffice.scenarios.building_kechuang.k1316.scenario_seminar_standard import (
     ScenarioBuildingKechuangK1316SeminarStandard,
 )
-from fairy.scenarios.building_kechuang.k1324.scenario_climate_coordination import (
+from smartoffice.scenarios.building_kechuang.k1324.scenario_climate_coordination import (
     ScenarioBuildingKechuangK1324ClimateCoordination,
 )
-from fairy.scenarios.building_kechuang.k1324.scenario_occupancy_ramp import (
+from smartoffice.scenarios.building_kechuang.k1324.scenario_occupancy_ramp import (
     OCCUPANCY_TIMELINE,
     ScenarioBuildingKechuangK1324OccupancyRamp,
 )
-from fairy.scenarios.registry import get_scenario_class
+from smartoffice.scenarios.registry import get_scenario_class
 
 
 def _replay(scenario_class):

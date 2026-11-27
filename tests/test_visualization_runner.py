@@ -12,7 +12,7 @@ from datetime import datetime
 from types import ModuleType, SimpleNamespace
 from unittest.mock import patch
 
-from fairy.visualization.runner import Runner, agent_configuration
+from smartoffice.visualization.runner import Runner, agent_configuration
 
 
 HVAC = "k1315_hvac_01"
@@ -193,7 +193,7 @@ class RunnerTests(unittest.TestCase):
                     (rate_limit_error, "rate_limit"), (ConnectionError, "connection"),
                     (ImportError, "dependency"), (RuntimeError, "execution")]
         for error_type, code in examples:
-            with self.subTest(code=code), patch("fairy.visualization.runner.agent_configuration", return_value={"configured": True}), patch.object(runner, "_run_llm", side_effect=error_type("private-provider-body test-secret")):
+            with self.subTest(code=code), patch("smartoffice.visualization.runner.agent_configuration", return_value={"configured": True}), patch.object(runner, "_run_llm", side_effect=error_type("private-provider-body test-secret")):
                 runner.start_agent("llm", "Observe the room")
                 self.wait_until(lambda: runner.snapshot()["agent"]["status"] == "error")
                 snapshot = runner.snapshot()
@@ -205,7 +205,7 @@ class RunnerTests(unittest.TestCase):
     def test_real_fairy_agent_tool_loop_with_an_offline_provider(self):
         """Use the real Agent loop, substituting only its external model client."""
         runner = self.runner()
-        module = ModuleType("fairy.agents.llm.openai_compatible_client")
+        module = ModuleType("smartoffice.agents.llm.openai_compatible_client")
 
         class FakeClient:
             provider = "openai"
@@ -237,7 +237,7 @@ class RunnerTests(unittest.TestCase):
                 return SimpleNamespace(choices=[SimpleNamespace(message=message)], usage=None)
 
         module.OpenAICompatibleClient = FakeClient
-        with patch.dict(sys.modules, {module.__name__: module}), patch.dict(os.environ, {"OFFICE_LLM_MODEL": "test-model", "OFFICE_LLM_API_KEY": "test-secret"}), patch("fairy.visualization.runner.agent_configuration", return_value={"configured": True}):
+        with patch.dict(sys.modules, {module.__name__: module}), patch.dict(os.environ, {"OFFICE_LLM_MODEL": "test-model", "OFFICE_LLM_API_KEY": "test-secret"}), patch("smartoffice.visualization.runner.agent_configuration", return_value={"configured": True}):
             runner.start_agent("llm", "Cool the room and observe the result.")
             self.wait_until(lambda: runner.snapshot()["agent"]["status"] != "running")
         snapshot = runner.snapshot()
@@ -259,7 +259,7 @@ class ReadinessTests(unittest.TestCase):
             ({"OFFICE_LLM_MODEL": "example-model", "OPENAI_API_KEY": "test-secret"}, True, None),
         ]
         for variables, sdk, code in cases:
-            with self.subTest(code=code), patch.dict(os.environ, variables, clear=True), patch("fairy.visualization.runner.importlib.util.find_spec", return_value=object() if sdk else None):
+            with self.subTest(code=code), patch.dict(os.environ, variables, clear=True), patch("smartoffice.visualization.runner.importlib.util.find_spec", return_value=object() if sdk else None):
                 result = agent_configuration()
                 self.assertEqual(result["reason_code"], code)
                 self.assertEqual(result["configured"], code is None)

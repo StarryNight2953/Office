@@ -4,10 +4,10 @@ from datetime import timedelta
 
 import pytest
 
-from fairy.apps.building_world import BuildingOperationsApp, HvacApp, PrintingApp
-from fairy.apps.system import SystemApp
-from fairy.controllers.engine import Engine
-from fairy.scenarios.building_kechuang.l3.scenarios import L3_SCENARIO_CLASSES
+from smartoffice.apps.building_world import BuildingOperationsApp, HvacApp, PrintingApp
+from smartoffice.apps.system import SystemApp
+from smartoffice.controllers.engine import Engine
+from smartoffice.scenarios.building_kechuang.l3.scenarios import L3_SCENARIO_CLASSES
 
 
 def _scenario(index=0):

@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from fairy.scenarios.building_kechuang.l3.catalog import L3_SPECS
+from smartoffice.scenarios.building_kechuang.l3.catalog import L3_SPECS
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ENDPOINT = os.getenv(
@@ -149,7 +149,7 @@ def build_cli_command(
     command = [
         sys.executable,
         "-m",
-        "fairy.cli",
+        "smartoffice.cli",
         "--agent",
         "--scenario",
         scenario_id,
@@ -193,7 +193,7 @@ def source_fingerprint() -> str:
     """Hash the Python implementation, including uncommitted and untracked files."""
 
     digest = hashlib.sha256()
-    paths = sorted((REPO_ROOT / "fairy").rglob("*.py"))
+    paths = sorted((REPO_ROOT / "smartoffice").rglob("*.py"))
     paths.append(Path(__file__).resolve())
     for path in paths:
         digest.update(path.relative_to(REPO_ROOT).as_posix().encode("utf-8"))

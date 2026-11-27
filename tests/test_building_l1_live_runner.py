@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from fairy.scenarios.building_kechuang.l1.manifest import (
+from smartoffice.scenarios.building_kechuang.l1.manifest import (
     accepted_contracts,
     load_manifest,
 )

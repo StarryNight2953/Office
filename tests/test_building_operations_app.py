@@ -3,8 +3,8 @@
 from datetime import timedelta
 from types import SimpleNamespace
 
-from fairy.agents.agent.agent import Agent
-from fairy.apps.building_world import (
+from smartoffice.agents.agent.agent import Agent
+from smartoffice.apps.building_world import (
     BuildingOperationsApp,
     BuildingWorldApp,
     HvacApp,
@@ -12,11 +12,11 @@ from fairy.apps.building_world import (
     PrintingApp,
     VentilationApp,
 )
-from fairy.apps.building_world.types import MeetingStatus, ReservationStatus
-from fairy.apps.system import SystemApp
-from fairy.controllers.engine import Engine
-from fairy.physics.building import SensorQuantity, SensorReading
-from fairy.scenarios.building_kechuang.l3.scenarios import L3_SCENARIO_CLASSES
+from smartoffice.apps.building_world.types import MeetingStatus, ReservationStatus
+from smartoffice.apps.system import SystemApp
+from smartoffice.controllers.engine import Engine
+from smartoffice.physics.building import SensorQuantity, SensorReading
+from smartoffice.scenarios.building_kechuang.l3.scenarios import L3_SCENARIO_CLASSES
 
 
 def test_l3_operational_status_blocks_early_completion_without_future_leak() -> None:

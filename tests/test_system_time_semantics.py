@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from fairy.apps.system import SystemApp
+from smartoffice.apps.system import SystemApp
 
 
 def test_system_time_exposes_explicit_local_and_utc_values() -> None:

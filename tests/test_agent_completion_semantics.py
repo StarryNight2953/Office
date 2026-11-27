@@ -6,18 +6,18 @@ import json
 import unittest
 from types import SimpleNamespace
 
-from fairy.agents.agent.agent import Agent
-from fairy.apps.agent_user_interface import AgentUserInterface
-from fairy.apps.building_world import BuildingOperationsApp
-from fairy.controllers.engine import Engine
-from fairy.scenarios.building_kechuang.l1.generated.scenario_building_kechuang_l1_power_constrained_adjustment import (
+from smartoffice.agents.agent.agent import Agent
+from smartoffice.apps.agent_user_interface import AgentUserInterface
+from smartoffice.apps.building_world import BuildingOperationsApp
+from smartoffice.controllers.engine import Engine
+from smartoffice.scenarios.building_kechuang.l1.generated.scenario_building_kechuang_l1_power_constrained_adjustment import (
     ScenarioBuildingKechuangL1PowerConstrainedAdjustment,
 )
-from fairy.scenarios.building_kechuang.l1.manifest import (
+from smartoffice.scenarios.building_kechuang.l1.manifest import (
     accepted_contracts,
     load_manifest,
 )
-from fairy.time_manager import TimeManager
+from smartoffice.time_manager import TimeManager
 
 
 class _FunctionCall:

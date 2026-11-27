@@ -9,30 +9,35 @@ import tempfile
 import unittest
 from datetime import datetime
 from pathlib import Path
+from unittest.mock import patch
 
-from fairy.controllers.engine import Engine
-from fairy.scenarios.workflow import WorkflowStep
-from fairy.scenarios.building_kechuang.l1.manifest import (
-    ManifestError,
+from smartoffice.controllers.engine import Engine
+from smartoffice.scenarios.building_kechuang.l1.manifest import (
     WRITE_TOOLS,
+    ManifestError,
     accepted_contracts,
     load_manifest,
     validate_manifest,
     validate_source_links,
 )
-from fairy.scenarios.registry import get_scenario_class
+from smartoffice.scenarios.registry import get_scenario_class
+from smartoffice.scenarios.workflow import WorkflowStep
+from scripts.finalize_building_l1_review import (
+    analyze_source,
+    build_full_review,
+    diagnostic_file,
+)
 from scripts.generate_building_l1_scenarios import (
     DEFAULT_OUTPUT_DIR,
     apply_generation,
     plan_generation,
     resolve_selectors,
 )
-from scripts.finalize_building_l1_review import build_full_review
 
 
 def _scenario_class(contract):
     importlib.import_module(
-        "fairy.scenarios.building_kechuang.l1.generated."
+        "smartoffice.scenarios.building_kechuang.l1.generated."
         + contract["scenario_id"]
     )
     return get_scenario_class(contract["scenario_id"])
@@ -43,9 +48,31 @@ class BuildingL1GenerationTests(unittest.TestCase):
     def setUpClass(cls):
         cls.manifest = load_manifest()
         cls.contracts = accepted_contracts(cls.manifest)
+        cls.diagnostic_workspace = tempfile.TemporaryDirectory(
+            prefix="office-l1-review-tests-"
+        )
+        cls.addClassCleanup(cls.diagnostic_workspace.cleanup)
+        cls.diagnostic_root = Path(cls.diagnostic_workspace.name)
+
+        def capture_source(scenario_class):
+            report, steps = analyze_source(scenario_class)
+            path = cls.diagnostic_root / diagnostic_file(report)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(report), encoding="utf-8")
+            return report, steps
+
+        # Rebuild evidence in an isolated workspace. A checkout must not depend
+        # on ignored historical workflow_exports or rewrite the reviewed file.
+        with patch(
+            "scripts.finalize_building_l1_review.analyze_source",
+            side_effect=capture_source,
+        ):
+            cls.current_manifest, cls.review, cls.obligations = build_full_review(
+                cls.manifest
+            )
 
     def test_reviewed_manifest_is_complete_and_source_linked(self):
-        validate_source_links(self.manifest)
+        validate_source_links(self.current_manifest, self.diagnostic_root)
         self.assertEqual(len(self.contracts), 12)
         self.assertTrue(self.manifest["scope"]["fully_split"])
         self.assertTrue(self.manifest["scope"]["candidate_disposition_complete"])
@@ -116,15 +143,8 @@ class BuildingL1GenerationTests(unittest.TestCase):
         self.assertEqual(len(result["unchanged"]), 12)
 
     def test_review_and_obligation_ledgers_have_complete_dispositions(self):
-        root = Path(__file__).resolve().parents[1]
-        review = json.loads(
-            (root / "workflow_exports/building_l3_to_l1_formal/review_ledger.json")
-            .read_text(encoding="utf-8")
-        )
-        obligations = json.loads(
-            (root / "workflow_exports/building_l3_to_l1_formal/obligation_ledger.json")
-            .read_text(encoding="utf-8")
-        )
+        review = self.review
+        obligations = self.obligations
         self.assertEqual(review["summary"]["source_l3_count"], 20)
         self.assertEqual(review["summary"]["candidate_total"], 252)
         self.assertTrue(review["summary"]["candidate_disposition_complete"])
@@ -177,8 +197,26 @@ class BuildingL1GenerationTests(unittest.TestCase):
         )
 
     def test_full_review_is_idempotent_and_print_variants_are_preserved(self):
-        rebuilt, review, obligations = build_full_review(self.manifest)
-        self.assertEqual(rebuilt, self.manifest)
+        rebuilt, review, obligations = build_full_review(self.current_manifest)
+        self.assertEqual(rebuilt, self.current_manifest)
+
+        def without_source_fingerprint(value):
+            if isinstance(value, dict):
+                return {
+                    key: without_source_fingerprint(item)
+                    for key, item in value.items()
+                    if key != "source_fingerprint"
+                }
+            if isinstance(value, list):
+                return [without_source_fingerprint(item) for item in value]
+            return value
+
+        # Historical provenance stays intact; all business contracts must still
+        # match. Current fingerprints are checked against real fresh evidence.
+        self.assertEqual(
+            without_source_fingerprint(rebuilt),
+            without_source_fingerprint(self.manifest),
+        )
         self.assertEqual(review["summary"]["accepted_l1_count"], 12)
         self.assertEqual(obligations["summary"]["unresolved_count"], 0)
         self.assertTrue(
@@ -198,6 +236,17 @@ class BuildingL1GenerationTests(unittest.TestCase):
                 for variant in printing["coverage"]["source_variants"]
             )
         )
+
+    def test_source_links_reject_changed_diagnostic_fingerprint(self):
+        invalid = copy.deepcopy(self.current_manifest)
+        variant = next(
+            variant
+            for contract in accepted_contracts(invalid)
+            for variant in contract["coverage"]["source_variants"]
+        )
+        variant["source_fingerprint"] = "different-source"
+        with self.assertRaisesRegex(ManifestError, "fingerprint changed"):
+            validate_source_links(invalid, self.diagnostic_root)
 
     def test_all_oracles_replay_from_fresh_initial_state(self):
         for contract in self.contracts:

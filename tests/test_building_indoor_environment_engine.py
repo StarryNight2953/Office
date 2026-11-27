@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from fairy.physics.building import (
+from smartoffice.physics.building import (
     BuildingObservationModel,
     BuildingPhysicsOrchestrator,
     HvacCommand,

@@ -1,6 +1,6 @@
-from fairy.agents.agent.toolset_builder import build_toolset
-from fairy.apps.agent_user_interface import AgentUserInterface
-from fairy.apps.building_world import (
+from smartoffice.agents.agent.toolset_builder import build_toolset
+from smartoffice.apps.agent_user_interface import AgentUserInterface
+from smartoffice.apps.building_world import (
     BuildingWorldApp,
     MeetingEquipmentApp,
     OccupancyApp,
@@ -8,20 +8,20 @@ from fairy.apps.building_world import (
     RoomApp,
     ScheduleApp,
 )
-from fairy.apps.building_world.types import (
+from smartoffice.apps.building_world.types import (
     BuildingEventType,
     PersonRole,
     PersonState,
     ReservationStatus,
     RoomSpec,
 )
-from fairy.controllers.engine import Engine
-from fairy.scenarios.building_kechuang.scenario_room_booking import (
+from smartoffice.controllers.engine import Engine
+from smartoffice.scenarios.building_kechuang.scenario_room_booking import (
     END_AT,
     START_AT,
     ScenarioBuildingKechuangRoomBooking,
 )
-from fairy.scenarios.registry import get_scenario_class
+from smartoffice.scenarios.registry import get_scenario_class
 
 
 def _apps():

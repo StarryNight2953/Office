@@ -5,8 +5,8 @@ import unittest
 
 from pydantic import ValidationError
 
-from fairy.visualization.models import Scene
-from fairy.visualization.scenes import SceneStore, catalog, default_scene, validate_scene
+from smartoffice.visualization.models import Scene
+from smartoffice.visualization.scenes import SceneStore, catalog, default_scene, validate_scene
 
 
 class SceneTests(unittest.TestCase):

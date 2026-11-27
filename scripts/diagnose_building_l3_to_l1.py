@@ -2,7 +2,7 @@
 
 This is a diagnostic prototype, not a registered-scenario generator. No count
 quota or automatic semantic deduplication is applied. See the Chinese standard
-in fairy/scenarios/building_kechuang/l3-to-l1-split-standard.zh.md.
+in smartoffice/scenarios/building_kechuang/l3-to-l1-split-standard.zh.md.
 """
 
 from __future__ import annotations
@@ -24,10 +24,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from fairy.agents.agent.toolset_builder import build_toolset
-from fairy.apps.building_world import PrintingApp
-from fairy.controllers.engine import Engine
-from fairy.scenarios.building_kechuang.l3.scenarios import L3_SCENARIO_CLASSES
+from smartoffice.agents.agent.toolset_builder import build_toolset
+from smartoffice.apps.building_world import PrintingApp
+from smartoffice.controllers.engine import Engine
+from smartoffice.scenarios.building_kechuang.l3.scenarios import L3_SCENARIO_CLASSES
 
 DEFAULT_OUTPUT = PROJECT_ROOT / "workflow_exports/building_l3_to_l1_diagnostic"
 ROOM_RE = re.compile(r"\bk(?:1324|1315|1316)(?=_|\b)")
@@ -47,15 +47,15 @@ GOALS = {
 def source_fingerprint() -> str:
     digest = hashlib.sha256()
     for relative in (
-        "fairy/scenarios/building_kechuang/l3/catalog.py",
-        "fairy/scenarios/building_kechuang/l3/specs.py",
-        "fairy/scenarios/building_kechuang/l3/base.py",
-        "fairy/apps/building_world/printing_app.py",
-        "fairy/apps/building_world/hvac_app.py",
-        "fairy/apps/building_world/lighting_app.py",
-        "fairy/apps/building_world/schedule_app.py",
-        "fairy/apps/building_world/operations_app.py",
-        "fairy/apps/building_world/runtime.py",
+        "smartoffice/scenarios/building_kechuang/l3/catalog.py",
+        "smartoffice/scenarios/building_kechuang/l3/specs.py",
+        "smartoffice/scenarios/building_kechuang/l3/base.py",
+        "smartoffice/apps/building_world/printing_app.py",
+        "smartoffice/apps/building_world/hvac_app.py",
+        "smartoffice/apps/building_world/lighting_app.py",
+        "smartoffice/apps/building_world/schedule_app.py",
+        "smartoffice/apps/building_world/operations_app.py",
+        "smartoffice/apps/building_world/runtime.py",
     ):
         digest.update(relative.encode())
         digest.update((PROJECT_ROOT / relative).read_bytes())

@@ -1,5 +1,5 @@
-from fairy.controllers.agent_builder import AgentBuilder
-from fairy.controllers.agent_config import (
+from smartoffice.controllers.agent_builder import AgentBuilder
+from smartoffice.controllers.agent_config import (
     BUILDING_WORLD_FUNCTION_CALL_SYSTEM_PROMPT,
     DEFAULT_FUNCTION_CALL_SYSTEM_PROMPT,
     AgentConfigBuilder,

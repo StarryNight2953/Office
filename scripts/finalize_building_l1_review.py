@@ -24,14 +24,14 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from fairy.apps.building_world import BuildingWorldApp, PrintingApp
-from fairy.scenarios.building_kechuang.l1.manifest import (
+from smartoffice.apps.building_world import BuildingWorldApp, PrintingApp
+from smartoffice.scenarios.building_kechuang.l1.manifest import (
     MANIFEST_PATH,
     validate_manifest,
     validate_source_links,
 )
-from fairy.scenarios.building_kechuang.l3.scenarios import L3_SCENARIO_CLASSES
-from fairy.scenarios.building_kechuang.scenario_room_booking import (
+from smartoffice.scenarios.building_kechuang.l3.scenarios import L3_SCENARIO_CLASSES
+from smartoffice.scenarios.building_kechuang.scenario_room_booking import (
     ScenarioBuildingKechuangRoomBooking,
 )
 from scripts.diagnose_building_l3_to_l1 import analyze_source, fresh_engine, invoke

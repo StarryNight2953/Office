@@ -21,9 +21,6 @@ FIELDS = [
     "tool_call_count",
     "total_tokens",
     "cached_tokens",
-    "warehouse_grain_kg",
-    "harvested_ridges",
-    "yield_g_m2",
     "building_energy_kwh",
     "comfort_violation_zone_minutes",
     "occupied_comfort_violation_zone_minutes",
@@ -71,12 +68,6 @@ def row_from_report(path: Path) -> dict[str, Any]:
         "tool_call_count": nested(report, "metrics.tool_call_count"),
         "total_tokens": nested(report, "metrics.token_usage.total_tokens"),
         "cached_tokens": nested(report, "metrics.token_usage.cached_tokens"),
-        "warehouse_grain_kg": nested(report, "outcome.inventory.warehouse_grain_kg"),
-        "harvested_ridges": nested(report, "outcome.yield_recovery.harvested_ridges"),
-        "yield_g_m2": nested(
-            report,
-            "outcome.yield_recovery.avg_recovered_yield_g_m2_at_market_moisture",
-        ),
         "building_energy_kwh": nested(
             report, "outcome.building.energy.total_kwh"
         ),
@@ -121,8 +112,8 @@ def _sum_zone_values(zones: Any, key: str) -> float | None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Summarize FAIRY run_report.json files")
-    parser.add_argument("runs_dir", nargs="?", default="validation_runs")
+    parser = argparse.ArgumentParser(description="Summarize smart-building run_report.json files")
+    parser.add_argument("runs_dir", nargs="?", default="runs")
     parser.add_argument("--csv", help="Optional CSV output path")
     args = parser.parse_args()
 
